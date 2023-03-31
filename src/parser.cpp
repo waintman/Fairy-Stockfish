@@ -357,7 +357,7 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("mandatoryPiecePromotion", v->mandatoryPiecePromotion);
     parse_attribute("pieceDemotion", v->pieceDemotion);
     parse_attribute("blastOnCapture", v->blastOnCapture);
-    parse_attribute("petrifyOnCapture", v->petrifyOnCapture);
+    parse_attribute("petrifyOnCaptureTypes", v->petrifyOnCaptureTypes, v->pieceToChar);
     parse_attribute("doubleStep", v->doubleStep);
     parse_attribute("doubleStepRegionWhite", v->doubleStepRegion[WHITE]);
     parse_attribute("doubleStepRegionBlack", v->doubleStepRegion[BLACK]);

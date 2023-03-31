@@ -64,7 +64,7 @@ struct Variant {
   bool mandatoryPiecePromotion = false;
   bool pieceDemotion = false;
   bool blastOnCapture = false;
-  bool petrifyOnCapture = false;
+  PieceSet petrifyOnCaptureTypes = NO_PIECE_SET;
   bool doubleStep = true;
   Bitboard doubleStepRegion[COLOR_NB] = {Rank2BB, Rank7BB};
   Bitboard tripleStepRegion[COLOR_NB] = {};
