@@ -296,6 +296,10 @@ enum CountingRule {
   NO_COUNTING, MAKRUK_COUNTING, ASEAN_COUNTING
 };
 
+enum JanggiSpecialRule {
+  RULE_JANGGI_NONE, RULE_JANGGI_DOSA, RULE_JANGGI_KAKAO
+};
+
 enum EnclosingRule {
   NO_ENCLOSING, REVERSI, ATAXX
 };

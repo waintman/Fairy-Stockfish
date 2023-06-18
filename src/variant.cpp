@@ -1344,7 +1344,8 @@ namespace {
         v->bikjangRule = false;
         v->materialCounting = JANGGI_MATERIAL;
         v->moveRepetitionIllegal = true;
-        v->nFoldRule = 4; // avoid nFold being triggered before move repetition
+        v->nFoldRule = 3; // avoid nFold being triggered before move repetition
+        v->nFoldValueAbsolute = true;
         v->nMoveRule = 100; // avoid adjudication before reaching 200 half-moves
         v->nnueAlias = "janggi";
         return v;
@@ -1354,6 +1355,32 @@ namespace {
         Variant* v = janggi_variant()->init();
         v->bikjangRule = false;
         v->materialCounting = NO_MATERIAL_COUNTING;
+        v->nnueAlias = "janggi";
+        return v;
+    }
+
+    Variant* janggi_dosa_variant() {
+        Variant* v = janggi_variant()->init();
+        v->bikjangRule = false;
+        v->materialCounting = JANGGI_MATERIAL;
+        v->janggiSpecialRule = RULE_JANGGI_DOSA;
+        v->moveRepetitionIllegal = true;
+        v->nFoldRule = 4; // avoid nFold being triggered before move repetition
+        v->nFoldValueAbsolute = true;
+        v->nMoveRule = 100; // avoid adjudication before reaching 200 half-moves
+        v->nnueAlias = "janggi";
+        return v;
+    }
+
+    Variant* janggi_kakao_variant() {
+        Variant* v = janggi_variant()->init();
+        v->bikjangRule = false;
+        v->materialCounting = JANGGI_MATERIAL;
+        v->janggiSpecialRule = RULE_JANGGI_KAKAO;
+        v->moveRepetitionIllegal = true;
+        v->nFoldRule = 4; // avoid nFold being triggered before move repetition
+        v->nFoldValueAbsolute = true;
+        v->nMoveRule = 100; // avoid adjudication before reaching 200 half-moves
         v->nnueAlias = "janggi";
         return v;
     }
@@ -1461,6 +1488,8 @@ void VariantMap::init() {
     add("janggitraditional", janggi_traditional_variant());
     add("janggimodern", janggi_modern_variant());
     add("janggicasual", janggi_casual_variant());
+    add("janggidosa", janggi_dosa_variant());
+    add("janggikakao", janggi_kakao_variant());
 #endif
 }
 

@@ -134,6 +134,8 @@ struct Variant {
   MaterialCounting materialCounting = NO_MATERIAL_COUNTING;
   CountingRule countingRule = NO_COUNTING;
 
+  JanggiSpecialRule janggiSpecialRule = RULE_JANGGI_NONE;
+
   // Derived properties
   bool fastAttacks = true;
   bool fastAttacks2 = true;

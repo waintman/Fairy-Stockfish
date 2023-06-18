@@ -181,6 +181,7 @@ public:
   // winning conditions
   int n_move_rule() const;
   int n_fold_rule() const;
+  JanggiSpecialRule n_janggi_rule_type() const;
   Value stalemate_value(int ply = 0) const;
   Value checkmate_value(int ply = 0) const;
   Value extinction_value(int ply = 0) const;
@@ -764,6 +765,11 @@ inline int Position::n_move_rule() const {
 inline int Position::n_fold_rule() const {
   assert(var != nullptr);
   return var->nFoldRule;
+}
+
+inline JanggiSpecialRule Position::n_janggi_rule_type() const {
+  assert(var != nullptr);
+  return var->janggiSpecialRule;
 }
 
 inline EnclosingRule Position::flip_enclosed_pieces() const {

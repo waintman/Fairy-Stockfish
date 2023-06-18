@@ -2289,70 +2289,75 @@ bool Position::is_optional_game_end(Value& result, int ply, int countStarted) co
       return true;
   }
 
-  // n-fold repetition
-  if (n_fold_rule())
-  {
-      int end = captures_to_hand() ? st->pliesFromNull : std::min(st->rule50, st->pliesFromNull);
+  switch(n_janggi_rule_type()){
+    case RULE_JANGGI_DOSA: break;
+    case RULE_JANGGI_KAKAO: break;
+    default: break;
+  }
+// n-fold repetition
+if (n_fold_rule())
+{
+    int end = captures_to_hand() ? st->pliesFromNull : std::min(st->rule50, st->pliesFromNull);
 
-      if (end >= 4)
-      {
-          StateInfo* stp = st->previous->previous;
-          int cnt = 0;
-          bool perpetualThem = st->checkersBB && stp->checkersBB;
-          bool perpetualUs = st->previous->checkersBB && stp->previous->checkersBB;
-          int moveRepetition = var->moveRepetitionIllegal
-                               && type_of(st->move) == NORMAL
-                               && !st->previous->checkersBB && !stp->previous->checkersBB
-                               && (board_bb(~side_to_move(), type_of(piece_on(to_sq(st->move)))) & board_bb(side_to_move(), KING))
-                               ? (stp->move == reverse_move(st->move) ? 2 : is_pass(stp->move) ? 1 : 0) : 0;
+    if (end >= 4)
+    {
+        StateInfo* stp = st->previous->previous;
+        int cnt = 0;
+        bool perpetualThem = st->checkersBB && stp->checkersBB;
+        bool perpetualUs = st->previous->checkersBB && stp->previous->checkersBB;
+        int moveRepetition = var->moveRepetitionIllegal
+                            && type_of(st->move) == NORMAL
+                            && !st->previous->checkersBB && !stp->previous->checkersBB
+                            && (board_bb(~side_to_move(), type_of(piece_on(to_sq(st->move)))) & board_bb(side_to_move(), KING))
+                            ? (stp->move == reverse_move(st->move) ? 2 : is_pass(stp->move) ? 1 : 0) : 0;
 
-          for (int i = 4; i <= end; i += 2)
-          {
-              // Janggi repetition rule
-              if (moveRepetition > 0)
-              {
-                  if (i + 1 <= end && stp->previous->previous->previous->checkersBB)
-                      moveRepetition = 0;
-                  else if (moveRepetition < 4)
-                  {
-                      if (stp->previous->previous->move == reverse_move((moveRepetition == 1 ? st : stp)->move))
-                          moveRepetition++;
-                      else
-                          moveRepetition = 0;
-                  }
-                  else
-                  {
-                      assert(moveRepetition == 4);
-                      if (!stp->previous->previous->capturedPiece && from_sq(stp->move) == to_sq(stp->previous->previous->move))
-                      {
-                          result = VALUE_MATE;
-                          return true;
-                      }
-                      else
-                          moveRepetition = 0;
-                  }
-              }
-              stp = stp->previous->previous;
-              perpetualThem &= bool(stp->checkersBB);
+        for (int i = 4; i <= end; i += 2)
+        {
+            // Janggi repetition rule
+            if (moveRepetition > 0)
+            {
+                if (i + 1 <= end && stp->previous->previous->previous->checkersBB)
+                    moveRepetition = 0;
+                else if (moveRepetition < 4)
+                {
+                    if (stp->previous->previous->move == reverse_move((moveRepetition == 1 ? st : stp)->move))
+                        moveRepetition++;
+                    else
+                        moveRepetition = 0;
+                }
+                else
+                {
+                    assert(moveRepetition == 4);
+                    if (!stp->previous->previous->capturedPiece && from_sq(stp->move) == to_sq(stp->previous->previous->move))
+                    {
+                        result = VALUE_MATE;
+                        return true;
+                    }
+                    else
+                        moveRepetition = 0;
+                }
+            }
+            stp = stp->previous->previous;
+            perpetualThem &= bool(stp->checkersBB);
 
-              // Return a draw score if a position repeats once earlier but strictly
-              // after the root, or repeats twice before or at the root.
-              if (   stp->key == st->key
-                  && ++cnt + 1 == (ply > i && !var->moveRepetitionIllegal ? 2 : n_fold_rule()))
-              {
-                  result = convert_mate_value(  var->perpetualCheckIllegal && perpetualThem ? VALUE_MATE
-                                              : var->perpetualCheckIllegal && perpetualUs ? -VALUE_MATE
-                                              : var->nFoldValueAbsolute && sideToMove == BLACK ? -var->nFoldValue
-                                              : var->nFoldValue, ply);
-                  if (result == VALUE_DRAW && var->materialCounting)
-                      result = convert_mate_value(material_counting_result(), ply);
-                  return true;
-              }
+            // Return a draw score if a position repeats once earlier but strictly
+            // after the root, or repeats twice before or at the root.
+            if (   stp->key == st->key
+                && ++cnt + 1 == (ply > i && !var->moveRepetitionIllegal ? 2 : n_fold_rule()))
+            {
+                result = convert_mate_value(  var->perpetualCheckIllegal && perpetualThem ? VALUE_MATE
+                                            : var->perpetualCheckIllegal && perpetualUs ? -VALUE_MATE
+                                            : var->nFoldValueAbsolute && sideToMove == BLACK ? -var->nFoldValue
+                                            : var->nFoldValue, ply);
+                if (result == VALUE_DRAW && var->materialCounting)
+                    result = convert_mate_value(material_counting_result(), ply);
+                return true;
+            }
 
-              if (i + 1 <= end)
-                  perpetualUs &= bool(stp->previous->checkersBB);
-          }
-      }
+            if (i + 1 <= end)
+                perpetualUs &= bool(stp->previous->checkersBB);
+        }
+    }
   }
 
   // counting rules
