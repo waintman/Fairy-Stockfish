@@ -497,6 +497,10 @@ private:
   bool is960 = false;
   bool parsedGame = false;
 public:
+  Game() : board(nullptr) {}
+  Game (Game& t) {
+    board = std::move(t.board);
+  }
   std::string header_keys() {
     std::string keys;
     for (auto it = header.begin(); it != header.end(); ++it) {
