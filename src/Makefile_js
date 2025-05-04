@@ -35,7 +35,7 @@ debug = no
 ifeq ($(debug),no)
 	CXXFLAGS += -DNDEBUG -s ASSERTIONS=0 -s SAFE_HEAP=0
 else
-	CXXFLAGS += -g -s ASSERTIONS=1 -s SAFE_HEAP=1
+	CXXFLAGS += -gsource-map --source-map-base http://localhost:9080/node_modules/ffish/ -s ASSERTIONS=1 -s SAFE_HEAP=1
 endif
 
 ### Optimization

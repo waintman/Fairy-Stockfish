@@ -17,7 +17,8 @@
 */
 
 #include <iostream>
-
+#include <unistd.h>
+#include <signal.h>
 #include "bitboard.h"
 #include "endgame.h"
 #include "position.h"
@@ -36,7 +37,10 @@
 using namespace Stockfish;
 
 int main(int argc, char* argv[]) {
-
+#ifndef NDEBUG
+  std::cout << "PID: " << getpid() << std::endl;
+  raise(SIGSTOP);  // attach할 때까지 멈춤
+#endif
   std::cout << engine_info() << std::endl;
 
   pieceMap.init();
