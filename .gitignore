@@ -19,7 +19,7 @@ tests/syzygy
 tests/js/node_modules
 ffish.js
 *.wasm
-
+*.wasm.map
 # pyffish
 venv
 *.so
