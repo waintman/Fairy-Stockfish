@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <cstdlib>
 #include <cassert>
 #include <cmath>
 #include <iostream>
@@ -40,10 +41,6 @@ extern vector<string> setup_bench(const Position&, istream&);
 
 namespace {
 
-  // FEN string of the initial position, normal chess
-  const char* StartFEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-
-
   // position() is called when engine receives the "position" UCI command.
   // The function sets up the position described in the given FEN string ("fen")
   // or the starting position ("startpos") and then makes the moves given in the
@@ -55,20 +52,22 @@ namespace {
     string token, fen;
 
     is >> token;
+    // Parse as SFEN if specified
+    bool sfen = token == "sfen";
 
     if (token == "startpos")
     {
-        fen = StartFEN;
+        fen = variants.find(Options["UCI_Variant"])->second->startFen;
         is >> token; // Consume "moves" token if any
     }
-    else if (token == "fen")
+    else if (token == "fen" || token == "sfen")
         while (is >> token && token != "moves")
             fen += token + " ";
     else
         return;
 
     states = StateListPtr(new std::deque<StateInfo>(1)); // Drop old and create a new one
-    pos.set(fen, Options["UCI_Chess960"], &states->back(), Threads.main());
+    pos.set(variants.find(Options["UCI_Variant"])->second, fen, Options["UCI_Chess960"], &states->back(), Threads.main(), sfen);
 
     // Parse move list (if any)
     while (is >> token && (m = UCI::to_move(pos, token)) != MOVE_NONE)
@@ -85,7 +84,7 @@ namespace {
 
     StateListPtr states(new std::deque<StateInfo>(1));
     Position p;
-    p.set(pos.fen(), Options["UCI_Chess960"], &states->back(), Threads.main());
+    p.set(pos.variant(), pos.fen(), Options["UCI_Chess960"], &states->back(), Threads.main());
 
     Eval::NNUE::verify();
 
@@ -112,6 +111,9 @@ namespace {
 
     if (Options.count(name))
         Options[name] = value;
+    // Deal with option name aliases in UCI dialects
+    else if (is_valid_option(Options, name))
+        Options[name] = value;
     else
         sync_cout << "No such option: " << name << sync_endl;
   }
@@ -121,13 +123,16 @@ namespace {
   // the thinking time and other parameters from the input string, then starts
   // the search.
 
-  void go(Position& pos, istringstream& is, StateListPtr& states) {
+  void go(Position& pos, istringstream& is, StateListPtr& states, const std::vector<Move>& banmoves = {}) {
 
     Search::LimitsType limits;
     string token;
     bool ponderMode = false;
 
     limits.startTime = now(); // As early as possible!
+
+    limits.banmoves = banmoves;
+    int secResolution = Options["usemillisec"] ? 1 : 1000;
 
     while (is >> token)
         if (token == "searchmoves") // Needs to be the last command on the line
@@ -149,7 +154,6 @@ namespace {
 
     Threads.start_thinking(pos, states, limits, ponderMode);
   }
-
 
   // bench() is called when engine receives the "bench" command. Firstly
   // a list of UCI commands is setup according to bench parameters, then
@@ -219,6 +223,48 @@ namespace {
      return int(0.5 + 1000 / (1 + std::exp((a - x) / b)));
   }
 
+  // load() is called when engine receives the "load" or "check" command.
+  // The function reads variant configuration files.
+
+  void load(istringstream& is, bool check = false) {
+
+    string token;
+    std::getline(is >> std::ws, token);
+
+    // The argument to load either is a here-doc or a file path
+    if (token.rfind("<<", 0) == 0)
+    {
+        // Trim the EOF marker
+        if (!(stringstream(token.substr(2)) >> token))
+            token = "";
+
+        // Parse variant config till EOF marker
+        stringstream ss;
+        std::string line;
+        while (std::getline(cin, line) && line != token)
+            ss << line << std::endl;
+        if (check)
+            variants.parse_istream<true>(ss);
+        else
+        {
+            variants.parse_istream<false>(ss);
+            Options["UCI_Variant"].set_combo(variants.get_keys());
+        }
+    }
+    else
+    {
+        // store path if non-empty after trimming
+        std::size_t end = token.find_last_not_of(' ');
+        if (end != std::string::npos)
+        {
+            if (check)
+                variants.parse<true>(token.erase(end + 1));
+            else
+                Options["VariantPath"] = token.erase(end + 1);
+        }
+    }
+  }
+
 } // namespace
 
 
@@ -234,10 +280,27 @@ void UCI::loop(int argc, char* argv[]) {
   string token, cmd;
   StateListPtr states(new std::deque<StateInfo>(1));
 
-  pos.set(StartFEN, false, &states->back(), Threads.main());
+  assert(variants.find(Options["UCI_Variant"])->second != nullptr);
+  pos.set(variants.find(Options["UCI_Variant"])->second, variants.find(Options["UCI_Variant"])->second->startFen, false, &states->back(), Threads.main());
 
   for (int i = 1; i < argc; ++i)
       cmd += std::string(argv[i]) + " ";
+
+  // UCCI banmoves state
+  std::vector<Move> banmoves = {};
+
+  if (argc > 1 && (std::strcmp(argv[1], "noautoload") == 0))
+  {
+      cmd = "";
+      argc = 1;
+  }
+  else if (argc == 1 || !(std::strcmp(argv[1], "load") == 0))
+  {
+      // Check environment for variants.ini file
+      char *envVariantPath = std::getenv("FAIRY_STOCKFISH_VARIANT_PATH");
+      if (envVariantPath != NULL)
+          Options["VariantPath"] = std::string(envVariantPath);
+  }
 
   do {
       if (argc == 1 && !getline(cin, cmd)) // Block here waiting for input or EOF
@@ -259,15 +322,23 @@ void UCI::loop(int argc, char* argv[]) {
       else if (token == "ponderhit")
           Threads.main()->ponder = false; // Switch to normal search
 
-      else if (token == "uci")
-          sync_cout << "id name " << engine_info(true)
-                    << "\n"       << Options
-                    << "\nuciok"  << sync_endl;
-
+      else if (token == "uci" || token == "usi" || token == "ucci" || token == "ucicyclone")
+      {
+          string defaultVariant = string("janggimodern");
+          Options["UCI_Variant"].set_default(defaultVariant);
+          std::istringstream ss("startpos");
+          position(pos, ss, states);
+          // Allow to enforce protocol at startup
+          argc = 1;
+      }
       else if (token == "setoption")  setoption(is);
-      else if (token == "go")         go(pos, is, states);
-      else if (token == "position")   position(pos, is, states);
-      else if (token == "ucinewgame") Search::clear();
+      // UCCI-specific banmoves command
+      else if (token == "banmoves")
+          while (is >> token)
+              banmoves.push_back(UCI::to_move(pos, token));
+      else if (token == "go")         go(pos, is, states, banmoves);
+      else if (token == "position")   position(pos, is, states), banmoves.clear();
+      else if (token == "ucinewgame" || token == "usinewgame" || token == "uccinewgame") Search::clear();
       else if (token == "isready")    sync_cout << "readyok" << sync_endl;
 
       // Additional custom non-UCI commands, mainly for debugging.
@@ -284,6 +355,14 @@ void UCI::loop(int argc, char* argv[]) {
           if (is >> skipws >> f)
               filename = f;
           Eval::NNUE::save_eval(filename);
+      }
+      else if (token == "load")     { load(is); argc = 1; } // continue reading stdin
+      else if (token == "check")    load(is, true);
+      // UCI-Cyclone omits the "position" keyword
+      else if (token == "fen" || token == "startpos")
+      {
+        is.seekg(0);
+        position(pos, is, states);
       }
       else if (!token.empty() && token[0] != '#')
           sync_cout << "Unknown command: " << cmd << sync_endl;
@@ -304,11 +383,10 @@ string UCI::value(Value v) {
   assert(-VALUE_INFINITE < v && v < VALUE_INFINITE);
 
   stringstream ss;
-
   if (abs(v) < VALUE_MATE_IN_MAX_PLY)
       ss << "cp " << v * 100 / PawnValueEg;
   else
-      ss << "mate " << (v > 0 ? VALUE_MATE - v + 1 : -VALUE_MATE - v) / 2;
+      ss << "mate " << (v > 0 ? VALUE_MATE - v + 1 : -VALUE_MATE - v - 1) / 2;
 
   return ss.str();
 }
@@ -332,8 +410,25 @@ string UCI::wdl(Value v, int ply) {
 
 /// UCI::square() converts a Square to a string in algebraic notation (g1, a7, etc.)
 
-std::string UCI::square(Square s) {
+std::string UCI::square(const Position& pos, Square s) {
+#ifdef LARGEBOARDS
+    return rank_of(s) < RANK_10 ? std::string{ char('a' + file_of(s)), char('1' + (rank_of(s) % 10)) }
+                                  : std::string{ char('a' + file_of(s)), char('0' + ((rank_of(s) + 1) / 10)),
+                                                 char('0' + ((rank_of(s) + 1) % 10)) };
+#else
   return std::string{ char('a' + file_of(s)), char('1' + rank_of(s)) };
+#endif
+}
+
+/// UCI::dropped_piece() generates a piece label string from a Move.
+
+string UCI::dropped_piece(const Position& pos, Move m) {
+  assert(type_of(m) == DROP);
+  if (dropped_piece_type(m) == pos.promoted_piece_type(in_hand_piece_type(m)))
+      // Dropping as promoted piece
+      return std::string{'+', pos.piece_to_char()[in_hand_piece_type(m)]};
+  else
+      return std::string{pos.piece_to_char()[dropped_piece_type(m)]};
 }
 
 
@@ -342,7 +437,7 @@ std::string UCI::square(Square s) {
 /// normal chess mode, and in e1h1 notation in chess960 mode. Internally all
 /// castling moves are always encoded as 'king captures rook'.
 
-string UCI::move(Move m, bool chess960) {
+string UCI::move(const Position& pos, Move m) {
 
   Square from = from_sq(m);
   Square to = to_sq(m);
@@ -353,13 +448,32 @@ string UCI::move(Move m, bool chess960) {
   if (m == MOVE_NULL)
       return "0000";
 
-  if (type_of(m) == CASTLING && !chess960)
-      to = make_square(to > from ? FILE_G : FILE_C, rank_of(from));
+  if (is_gating(m) && gating_square(m) == to)
+      from = to_sq(m), to = from_sq(m);
+  else if (type_of(m) == CASTLING && !pos.is_chess960())
+  {
+      to = make_square(to > from ? pos.castling_kingside_file() : pos.castling_queenside_file(), rank_of(from));
+      // If the castling move is ambiguous with a normal king move, switch to 960 notation
+      if (pos.pseudo_legal(make_move(from, to)))
+          to = to_sq(m);
+  }
 
-  string move = UCI::square(from) + UCI::square(to);
+  string move = (type_of(m) == DROP ? UCI::dropped_piece(pos, m) + '@'
+                                    : UCI::square(pos, from)) + UCI::square(pos, to);
 
+  // Wall square
   if (type_of(m) == PROMOTION)
-      move += " pnbrqk"[promotion_type(m)];
+      move += pos.piece_to_char()[make_piece(BLACK, promotion_type(m))];
+  else if (type_of(m) == PIECE_PROMOTION)
+      move += '+';
+  else if (type_of(m) == PIECE_DEMOTION)
+      move += '-';
+  else if (is_gating(m))
+  {
+      move += pos.piece_to_char()[make_piece(BLACK, gating_type(m))];
+      if (gating_square(m) != from)
+          move += UCI::square(pos, gating_square(m));
+  }
 
   return move;
 }
@@ -370,14 +484,32 @@ string UCI::move(Move m, bool chess960) {
 
 Move UCI::to_move(const Position& pos, string& str) {
 
-  if (str.length() == 5) // Junior could send promotion piece in uppercase
-      str[4] = char(tolower(str[4]));
+  if (str.length() == 5) { // Junior could send promotion piece in uppercase
+    str[4] = char(tolower(str[4]));
+  }
 
   for (const auto& m : MoveList<LEGAL>(pos))
-      if (str == UCI::move(m, pos.is_chess960()))
+      if (str == UCI::move(pos, m) || (is_pass(m) && str == UCI::square(pos, from_sq(m)) + UCI::square(pos, to_sq(m))))
           return m;
 
   return MOVE_NONE;
+}
+
+std::string UCI::option_name(std::string name) {
+  return name;
+}
+
+bool UCI::is_valid_option(UCI::OptionsMap& options, std::string& name) {
+  for (const auto& it : options)
+  {
+      std::string optionName = option_name(it.first);
+      if (!options.key_comp()(optionName, name) && !options.key_comp()(name, optionName))
+      {
+          name = it.first;
+          return true;
+      }
+  }
+  return false;
 }
 
 } // namespace Stockfish

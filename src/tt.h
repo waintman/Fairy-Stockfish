@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,20 +24,20 @@
 
 namespace Stockfish {
 
-/// TTEntry struct is the 10 bytes transposition table entry, defined as below:
+/// TTEntry struct is the 12 bytes transposition table entry, defined as below:
 ///
 /// key        16 bit
 /// depth       8 bit
 /// generation  5 bit
 /// pv node     1 bit
 /// bound type  2 bit
-/// move       16 bit
+/// move       32 bit (official SF: 16 bit)
 /// value      16 bit
 /// eval value 16 bit
 
 struct TTEntry {
 
-  Move  move()  const { return (Move )move16; }
+  Move  move()  const { return (Move )move32; }
   Value value() const { return (Value)value16; }
   Value eval()  const { return (Value)eval16; }
   Depth depth() const { return (Depth)depth8 + DEPTH_OFFSET; }
@@ -51,7 +51,7 @@ private:
   uint16_t key16;
   uint8_t  depth8;
   uint8_t  genBound8;
-  uint16_t move16;
+  uint32_t move32;
   int16_t  value16;
   int16_t  eval16;
 };
@@ -65,14 +65,14 @@ private:
 
 class TranspositionTable {
 
-  static constexpr int ClusterSize = 3;
+  static constexpr int ClusterSize = 5;
 
   struct Cluster {
     TTEntry entry[ClusterSize];
-    char padding[2]; // Pad to 32 bytes
+    char padding[4]; // Pad to 64 bytes
   };
 
-  static_assert(sizeof(Cluster) == 32, "Unexpected Cluster size");
+  static_assert(sizeof(Cluster) == 64, "Unexpected Cluster size");
 
   // Constants used to refresh the hash table periodically
   static constexpr unsigned GENERATION_BITS  = 3;                                // nb of bits reserved for other things

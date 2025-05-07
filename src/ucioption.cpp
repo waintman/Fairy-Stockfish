@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,13 +20,16 @@
 #include <cassert>
 #include <ostream>
 #include <sstream>
+#include <iostream>
 
 #include "evaluate.h"
 #include "misc.h"
+#include "piece.h"
 #include "search.h"
 #include "thread.h"
 #include "tt.h"
 #include "uci.h"
+#include "variant.h"
 #include "syzygy/tbprobe.h"
 
 using std::string;
@@ -35,7 +38,16 @@ namespace Stockfish {
 
 UCI::OptionsMap Options; // Global object
 
+namespace PSQT {
+  void init(const Variant* v);
+}
+
 namespace UCI {
+
+void init_variant(const Variant* v) {
+    pieceMap.init(v);
+    Bitboards::init_pieces();
+}
 
 /// 'On change' actions, triggered by an option's value change
 void on_clear_hash(const Option&) { Search::clear(); }
@@ -43,8 +55,44 @@ void on_hash_size(const Option& o) { TT.resize(size_t(o)); }
 void on_logger(const Option& o) { start_logger(o); }
 void on_threads(const Option& o) { Threads.set(size_t(o)); }
 void on_tb_path(const Option& o) { Tablebases::init(o); }
+
 void on_use_NNUE(const Option& ) { Eval::NNUE::init(); }
 void on_eval_file(const Option& ) { Eval::NNUE::init(); }
+
+void on_variant_path(const Option& o) {
+    std::stringstream ss((std::string)o);
+    std::string path;
+
+    while (std::getline(ss, path, SepChar))
+        variants.parse<false>(path);
+
+    Options["UCI_Variant"].set_combo(variants.get_keys());
+}
+void on_variant_set(const Option &o) {
+    // Re-initialize NNUE
+    Eval::NNUE::init();
+
+    const Variant* v = variants.find(o)->second;
+    init_variant(v);
+    PSQT::init(v);
+}
+void on_variant_change(const Option &o) {
+    // Variant initialization
+    on_variant_set(o);
+
+    const Variant* v = variants.find(o)->second;
+
+    int pocketsize = v->pieceDrops ? (v->pocketSize ? v->pocketSize : popcount(v->pieceTypes)) : 0;
+
+    sync_cout << "info string variant " << (std::string)o
+            << " files " << v->maxFile + 1
+            << " ranks " << v->maxRank + 1
+            << " pocket " << pocketsize
+            << " template " << v->variantTemplate
+            << " startpos " << v->startFen
+            << sync_endl;
+}
+
 
 /// Our case insensitive less() function as required by UCI protocol
 bool CaseInsensitiveLess::operator() (const string& s1, const string& s2) const {
@@ -66,21 +114,28 @@ void init(OptionsMap& o) {
   o["Clear Hash"]            << Option(on_clear_hash);
   o["Ponder"]                << Option(false);
   o["MultiPV"]               << Option(1, 1, 500);
-  o["Skill Level"]           << Option(20, 0, 20);
+  o["Skill Level"]           << Option(20, -20, 20);
   o["Move Overhead"]         << Option(10, 0, 5000);
   o["Slow Mover"]            << Option(100, 10, 1000);
   o["nodestime"]             << Option(0, 0, 10000);
   o["UCI_Chess960"]          << Option(false);
+  o["UCI_Variant"]           << Option("chess", variants.get_keys(), on_variant_change);
   o["UCI_AnalyseMode"]       << Option(false);
   o["UCI_LimitStrength"]     << Option(false);
-  o["UCI_Elo"]               << Option(1350, 1350, 2850);
+  o["UCI_Elo"]               << Option(1350, 500, 2850);
   o["UCI_ShowWDL"]           << Option(false);
   o["SyzygyPath"]            << Option("<empty>", on_tb_path);
   o["SyzygyProbeDepth"]      << Option(1, 1, 100);
   o["Syzygy50MoveRule"]      << Option(true);
   o["SyzygyProbeLimit"]      << Option(7, 0, 7);
   o["Use NNUE"]              << Option(true, on_use_NNUE);
+#ifndef NNUE_EMBEDDING_OFF
   o["EvalFile"]              << Option(EvalFileDefaultName, on_eval_file);
+#else
+  o["EvalFile"]              << Option("<empty>", on_eval_file);
+#endif
+  o["VariantPath"]           << Option("<empty>", on_variant_path);
+  o["usemillisec"]           << Option(true); // time unit for UCCI
 }
 
 
@@ -94,10 +149,15 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
           if (it.second.idx == idx)
           {
               const Option& o = it.second;
-              os << "\noption name " << it.first << " type " << o.type;
+              // UCI dialects do not allow spaces
+                os << "\noption name " << it.first << " type " << o.type;
 
               if (o.type == "string" || o.type == "check" || o.type == "combo")
                   os << " default " << o.defaultValue;
+
+              if (o.type == "combo")
+                  for (string value : o.comboValues)
+                      os << " var " << value;
 
               if (o.type == "spin")
                   os << " default " << int(stof(o.defaultValue))
@@ -116,6 +176,9 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
 Option::Option(const char* v, OnChange f) : type("string"), min(0), max(0), on_change(f)
 { defaultValue = currentValue = v; }
 
+Option::Option(const char* v, const std::vector<std::string>& values, OnChange f) : type("combo"), min(0), max(0), comboValues(values), on_change(f)
+{ defaultValue = currentValue = v; }
+
 Option::Option(bool v, OnChange f) : type("check"), min(0), max(0), on_change(f)
 { defaultValue = currentValue = (v ? "true" : "false"); }
 
@@ -125,16 +188,13 @@ Option::Option(OnChange f) : type("button"), min(0), max(0), on_change(f)
 Option::Option(double v, int minv, int maxv, OnChange f) : type("spin"), min(minv), max(maxv), on_change(f)
 { defaultValue = currentValue = std::to_string(v); }
 
-Option::Option(const char* v, const char* cur, OnChange f) : type("combo"), min(0), max(0), on_change(f)
-{ defaultValue = v; currentValue = cur; }
-
 Option::operator double() const {
   assert(type == "check" || type == "spin");
   return (type == "spin" ? stof(currentValue) : currentValue == "true");
 }
 
 Option::operator std::string() const {
-  assert(type == "string");
+  assert(type == "string" || type == "combo");
   return currentValue;
 }
 
@@ -142,6 +202,11 @@ bool Option::operator==(const char* s) const {
   assert(type == "combo");
   return   !CaseInsensitiveLess()(currentValue, s)
         && !CaseInsensitiveLess()(s, currentValue);
+}
+
+bool Option::operator!=(const char* s) const {
+  assert(type == "combo");
+  return !(*this == s);
 }
 
 
@@ -166,15 +231,14 @@ Option& Option::operator=(const string& v) {
 
   if (   (type != "button" && v.empty())
       || (type == "check" && v != "true" && v != "false")
+      || (type == "combo" && (std::find(comboValues.begin(), comboValues.end(), v) == comboValues.end()))
       || (type == "spin" && (stof(v) < min || stof(v) > max)))
       return *this;
 
   if (type == "combo")
   {
       OptionsMap comboMap; // To have case insensitive compare
-      string token;
-      std::istringstream ss(defaultValue);
-      while (ss >> token)
+      for (string token : comboValues)
           comboMap[token] << Option();
       if (!comboMap.count(v) || v == "var")
           return *this;
@@ -187,6 +251,23 @@ Option& Option::operator=(const string& v) {
       on_change(*this);
 
   return *this;
+}
+
+void Option::set_combo(std::vector<std::string> newComboValues) {
+    comboValues = newComboValues;
+}
+
+void Option::set_default(std::string newDefault) {
+    defaultValue = currentValue = newDefault;
+
+    // When changing the variant default, suppress variant definition output,
+    // but still do the essential re-initialization of the variant
+    if (on_change)
+        (on_change == on_variant_change ? on_variant_set : on_change)(*this);
+}
+
+const std::string Option::get_type() const {
+    return type;
 }
 
 } // namespace UCI

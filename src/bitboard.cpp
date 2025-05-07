@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,7 +20,9 @@
 #include <bitset>
 
 #include "bitboard.h"
+#include "magic.h"
 #include "misc.h"
+#include "piece.h"
 
 namespace Stockfish {
 
@@ -30,18 +32,170 @@ uint8_t SquareDistance[SQUARE_NB][SQUARE_NB];
 Bitboard SquareBB[SQUARE_NB];
 Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
-Bitboard PseudoAttacks[PIECE_TYPE_NB][SQUARE_NB];
-Bitboard PawnAttacks[COLOR_NB][SQUARE_NB];
+Bitboard PseudoAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
+Bitboard PseudoMoves[2][COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
+Bitboard LeaperAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
+Bitboard LeaperMoves[2][COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
+Bitboard BoardSizeBB[FILE_NB][RANK_NB];
+RiderType AttackRiderTypes[PIECE_TYPE_NB];
+RiderType MoveRiderTypes[2][PIECE_TYPE_NB];
 
-Magic RookMagics[SQUARE_NB];
+Magic RookMagicsH[SQUARE_NB];
+Magic RookMagicsV[SQUARE_NB];
 Magic BishopMagics[SQUARE_NB];
+Magic CannonMagicsH[SQUARE_NB];
+Magic CannonMagicsV[SQUARE_NB];
+Magic LameDabbabaMagics[SQUARE_NB];
+Magic HorseMagics[SQUARE_NB];
+Magic ElephantMagics[SQUARE_NB];
+Magic JanggiElephantMagics[SQUARE_NB];
+Magic CannonDiagMagics[SQUARE_NB];
+Magic NightriderMagics[SQUARE_NB];
+Magic GrasshopperMagicsH[SQUARE_NB];
+Magic GrasshopperMagicsV[SQUARE_NB];
+Magic GrasshopperMagicsD[SQUARE_NB];
+
+Magic* magics[] = {BishopMagics, RookMagicsH, RookMagicsV, CannonMagicsH, CannonMagicsV,
+                   LameDabbabaMagics, HorseMagics, ElephantMagics, JanggiElephantMagics, CannonDiagMagics, NightriderMagics,
+                   GrasshopperMagicsH, GrasshopperMagicsV, GrasshopperMagicsD};
 
 namespace {
 
-  Bitboard RookTable[0x19000];  // To store rook attacks
+// Some magics need to be split in order to reduce memory consumption.
+// Otherwise on a 12x10 board they can be >100 MB.
+#ifdef LARGEBOARDS
+  Bitboard RookTableH[0x11800];  // To store horizontal rook attacks
+  Bitboard RookTableV[0x4800];  // To store vertical rook attacks
+  Bitboard BishopTable[0x33C00]; // To store bishop attacks
+  Bitboard CannonTableH[0x11800];  // To store horizontal cannon attacks
+  Bitboard CannonTableV[0x4800];  // To store vertical cannon attacks
+  Bitboard LameDabbabaTable[0x500];  // To store lame dabbaba attacks
+  Bitboard HorseTable[0x500];  // To store horse attacks
+  Bitboard ElephantTable[0x400];  // To store elephant attacks
+  Bitboard JanggiElephantTable[0x1C000];  // To store janggi elephant attacks
+  Bitboard CannonDiagTable[0x33C00]; // To store diagonal cannon attacks
+  Bitboard NightriderTable[0x70200]; // To store nightrider attacks
+  Bitboard GrasshopperTableH[0x11800];  // To store horizontal grasshopper attacks
+  Bitboard GrasshopperTableV[0x4800];  // To store vertical grasshopper attacks
+  Bitboard GrasshopperTableD[0x33C00]; // To store diagonal grasshopper attacks
+#else
+  Bitboard RookTableH[0xA00];  // To store horizontal rook attacks
+  Bitboard RookTableV[0xA00];  // To store vertical rook attacks
   Bitboard BishopTable[0x1480]; // To store bishop attacks
+  Bitboard CannonTableH[0xA00];  // To store horizontal cannon attacks
+  Bitboard CannonTableV[0xA00];  // To store vertical cannon attacks
+  Bitboard LameDabbabaTable[0x240];  // To store lame dabbaba attacks
+  Bitboard HorseTable[0x240];  // To store horse attacks
+  Bitboard ElephantTable[0x1A0];  // To store elephant attacks
+  Bitboard JanggiElephantTable[0x5C00];  // To store janggi elephant attacks
+  Bitboard CannonDiagTable[0x1480]; // To store diagonal cannon attacks
+  Bitboard NightriderTable[0x1840]; // To store nightrider attacks
+  Bitboard GrasshopperTableH[0xA00];  // To store horizontal grasshopper attacks
+  Bitboard GrasshopperTableV[0xA00];  // To store vertical grasshopper attacks
+  Bitboard GrasshopperTableD[0x1480]; // To store diagonal grasshopper attacks
+#endif
 
-  void init_magics(PieceType pt, Bitboard table[], Magic magics[]);
+  // Rider directions
+  const std::map<Direction, int> RookDirectionsV { {NORTH, 0}, {SOUTH, 0}};
+  const std::map<Direction, int> RookDirectionsH { {EAST, 0}, {WEST, 0} };
+  const std::map<Direction, int> BishopDirections { {NORTH_EAST, 0}, {SOUTH_EAST, 0}, {SOUTH_WEST, 0}, {NORTH_WEST, 0} };
+  const std::map<Direction, int> LameDabbabaDirections { {2 * NORTH, 0}, {2 * EAST, 0}, {2 * SOUTH, 0}, {2 * WEST, 0} };
+  const std::map<Direction, int> HorseDirections { {2 * SOUTH + WEST, 0}, {2 * SOUTH + EAST, 0}, {SOUTH + 2 * WEST, 0}, {SOUTH + 2 * EAST, 0},
+                                                   {NORTH + 2 * WEST, 0}, {NORTH + 2 * EAST, 0}, {2 * NORTH + WEST, 0}, {2 * NORTH + EAST, 0} };
+  const std::map<Direction, int> ElephantDirections { {2 * NORTH_EAST, 0}, {2 * SOUTH_EAST, 0}, {2 * SOUTH_WEST, 0}, {2 * NORTH_WEST, 0} };
+  const std::map<Direction, int> JanggiElephantDirections { {NORTH + 2 * NORTH_EAST, 0}, {EAST  + 2 * NORTH_EAST, 0},
+                                                            {EAST  + 2 * SOUTH_EAST, 0}, {SOUTH + 2 * SOUTH_EAST, 0},
+                                                            {SOUTH + 2 * SOUTH_WEST, 0}, {WEST  + 2 * SOUTH_WEST, 0},
+                                                            {WEST  + 2 * NORTH_WEST, 0}, {NORTH + 2 * NORTH_WEST, 0} };
+  const std::map<Direction, int> GrasshopperDirectionsV { {NORTH, 1}, {SOUTH, 1}};
+  const std::map<Direction, int> GrasshopperDirectionsH { {EAST, 1}, {WEST, 1} };
+  const std::map<Direction, int> GrasshopperDirectionsD { {NORTH_EAST, 1}, {SOUTH_EAST, 1}, {SOUTH_WEST, 1}, {NORTH_WEST, 1} };
+
+  enum MovementType { RIDER, HOPPER, LAME_LEAPER, HOPPER_RANGE };
+
+  template <MovementType MT>
+#ifdef PRECOMPUTED_MAGICS
+  void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> directions, const Bitboard magicsInit[]);
+#else
+  void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> directions);
+#endif
+
+  template <MovementType MT>
+  Bitboard sliding_attack(std::map<Direction, int> directions, Square sq, Bitboard occupied, Color c = WHITE) {
+    assert(MT != LAME_LEAPER);
+
+    Bitboard attack = 0;
+
+    for (auto const& [d, limit] : directions)
+    {
+        int count = 0;
+        bool hurdle = false;
+        for (Square s = sq + (c == WHITE ? d : -d);
+             is_ok(s) && distance(s, s - (c == WHITE ? d : -d)) <= 2;
+             s += (c == WHITE ? d : -d))
+        {
+            if (MT != HOPPER || hurdle)
+            {
+                attack |= s;
+                // For hoppers we consider limit == 1 as a grasshopper,
+                // but limit > 1 as a limited distance hopper
+                if (limit && !(MT == HOPPER_RANGE && limit == 1) && ++count >= limit)
+                    break;
+            }
+
+            if (occupied & s)
+            {
+                if (MT == HOPPER && !hurdle)
+                    hurdle = true;
+                else
+                    break;
+            }
+        }
+    }
+
+    return attack;
+  }
+
+  Bitboard lame_leaper_path(Direction d, Square s) {
+    Direction dr = d > 0 ? NORTH : SOUTH;
+    Direction df = (std::abs(d % NORTH) < NORTH / 2 ? d % NORTH : -(d % NORTH)) < 0 ? WEST : EAST;
+    Square to = s + d;
+    Bitboard b = 0;
+    if (!is_ok(to) || distance(s, to) >= 4)
+        return b;
+    while (s != to)
+    {
+        int diff = std::abs(file_of(to) - file_of(s)) - std::abs(rank_of(to) - rank_of(s));
+        if (diff > 0)
+            s += df;
+        else if (diff < 0)
+            s += dr;
+        else
+            s += df + dr;
+
+        if (s != to)
+            b |= s;
+    }
+    return b;
+  }
+
+  Bitboard lame_leaper_path(std::map<Direction, int> directions, Square s) {
+    Bitboard b = 0;
+    for (const auto& i : directions)
+        b |= lame_leaper_path(i.first, s);
+    return b;
+  }
+
+  Bitboard lame_leaper_attack(std::map<Direction, int> directions, Square s, Bitboard occupied) {
+    Bitboard b = 0;
+    for (const auto& i : directions)
+    {
+        Square to = s + i.first;
+        if (is_ok(to) && distance(s, to) < 4 && !(lame_leaper_path(i.first, s) & occupied))
+            b |= to;
+    }
+    return b;
+  }
 
 }
 
@@ -50,7 +204,7 @@ namespace {
 
 inline Bitboard safe_destination(Square s, int step) {
     Square to = Square(s + step);
-    return is_ok(to) && distance(s, to) <= 2 ? square_bb(to) : Bitboard(0);
+    return is_ok(to) && distance(s, to) <= 3 ? square_bb(to) : Bitboard(0);
 }
 
 
@@ -59,18 +213,101 @@ inline Bitboard safe_destination(Square s, int step) {
 
 std::string Bitboards::pretty(Bitboard b) {
 
-  std::string s = "+---+---+---+---+---+---+---+---+\n";
+  std::string s = "+---+---+---+---+---+---+---+---+---+---+---+---+\n";
 
-  for (Rank r = RANK_8; r >= RANK_1; --r)
+  for (Rank r = RANK_MAX; r >= RANK_1; --r)
   {
-      for (File f = FILE_A; f <= FILE_H; ++f)
+      for (File f = FILE_A; f <= FILE_MAX; ++f)
           s += b & make_square(f, r) ? "| X " : "|   ";
 
-      s += "| " + std::to_string(1 + r) + "\n+---+---+---+---+---+---+---+---+\n";
+      s += "| " + std::to_string(1 + r) + "\n+---+---+---+---+---+---+---+---+---+---+---+---+\n";
   }
-  s += "  a   b   c   d   e   f   g   h\n";
+  s += "  a   b   c   d   e   f   g   h   i   j   k   l\n";
 
   return s;
+}
+
+/// Bitboards::init_pieces() initializes piece move/attack bitboards and rider types
+
+void Bitboards::init_pieces() {
+
+  for (PieceType pt = PAWN; pt <= KING; ++pt)
+  {
+      const PieceInfo* pi = pieceMap.find(pt)->second;
+
+      // Detect rider types
+      for (auto modality : {MODALITY_QUIET, MODALITY_CAPTURE})
+      {
+          for (bool initial : {false, true})
+          {
+              // We do not support initial captures
+              if (modality == MODALITY_CAPTURE && initial)
+                  continue;
+              auto& riderTypes = modality == MODALITY_CAPTURE ? AttackRiderTypes[pt] : MoveRiderTypes[initial][pt];
+              riderTypes = NO_RIDER;
+              for (auto const& [d, limit] : pi->steps[initial][modality])
+              {
+                  if (limit && LameDabbabaDirections.find(d) != LameDabbabaDirections.end())
+                      riderTypes |= RIDER_LAME_DABBABA;
+                  if (limit && HorseDirections.find(d) != HorseDirections.end())
+                      riderTypes |= RIDER_HORSE;
+                  if (limit && ElephantDirections.find(d) != ElephantDirections.end())
+                      riderTypes |= RIDER_ELEPHANT;
+                  if (limit && JanggiElephantDirections.find(d) != JanggiElephantDirections.end())
+                      riderTypes |= RIDER_JANGGI_ELEPHANT;
+              }
+              for (auto const& [d, limit] : pi->slider[initial][modality])
+              {
+                  if (BishopDirections.find(d) != BishopDirections.end())
+                      riderTypes |= RIDER_BISHOP;
+                  if (RookDirectionsH.find(d) != RookDirectionsH.end())
+                      riderTypes |= RIDER_ROOK_H;
+                  if (RookDirectionsV.find(d) != RookDirectionsV.end())
+                      riderTypes |= RIDER_ROOK_V;
+                  if (HorseDirections.find(d) != HorseDirections.end())
+                      riderTypes |= RIDER_NIGHTRIDER;
+              }
+              for (auto const& [d, limit] : pi->hopper[initial][modality])
+              {
+                  if (RookDirectionsH.find(d) != RookDirectionsH.end())
+                      riderTypes |= limit == 1 ? RIDER_GRASSHOPPER_H : RIDER_CANNON_H;
+                  if (RookDirectionsV.find(d) != RookDirectionsV.end())
+                      riderTypes |= limit == 1 ? RIDER_GRASSHOPPER_V : RIDER_CANNON_V;
+                  if (BishopDirections.find(d) != BishopDirections.end())
+                      riderTypes |= limit == 1 ? RIDER_GRASSHOPPER_D : RIDER_CANNON_DIAG;
+              }
+          }
+      }
+
+      // Initialize move/attack bitboards
+      for (Color c : { WHITE, BLACK })
+      {
+          for (Square s = SQ_A1; s <= SQ_MAX; ++s)
+          {
+              for (auto modality : {MODALITY_QUIET, MODALITY_CAPTURE})
+              {
+                  for (bool initial : {false, true})
+                  {
+                      // We do not support initial captures
+                      if (modality == MODALITY_CAPTURE && initial)
+                          continue;
+                      auto& pseudo = modality == MODALITY_CAPTURE ? PseudoAttacks[c][pt][s] : PseudoMoves[initial][c][pt][s];
+                      auto& leaper = modality == MODALITY_CAPTURE ? LeaperAttacks[c][pt][s] : LeaperMoves[initial][c][pt][s];
+                      pseudo = 0;
+                      leaper = 0;
+                      for (auto const& [d, limit] : pi->steps[initial][modality])
+                      {
+                          pseudo |= safe_destination(s, c == WHITE ? d : -d);
+                          if (!limit)
+                              leaper |= safe_destination(s, c == WHITE ? d : -d);
+                      }
+                      pseudo |= sliding_attack<RIDER>(pi->slider[initial][modality], s, 0, c);
+                      pseudo |= sliding_attack<HOPPER_RANGE>(pi->hopper[initial][modality], s, 0, c);
+                  }
+              }
+          }
+      }
+  }
 }
 
 
@@ -82,37 +319,60 @@ void Bitboards::init() {
   for (unsigned i = 0; i < (1 << 16); ++i)
       PopCnt16[i] = uint8_t(std::bitset<16>(i).count());
 
-  for (Square s = SQ_A1; s <= SQ_H8; ++s)
-      SquareBB[s] = (1ULL << s);
+  for (Square s = SQ_A1; s <= SQ_MAX; ++s)
+      SquareBB[s] = make_bitboard(s);
 
-  for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
-      for (Square s2 = SQ_A1; s2 <= SQ_H8; ++s2)
-          SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
+  for (File f = FILE_A; f <= FILE_MAX; ++f)
+      for (Rank r = RANK_1; r <= RANK_MAX; ++r)
+          BoardSizeBB[f][r] = forward_file_bb(BLACK, make_square(f, r)) | SquareBB[make_square(f, r)] | (f > FILE_A ? BoardSizeBB[f - 1][r] : Bitboard(0));
 
-  init_magics(ROOK, RookTable, RookMagics);
-  init_magics(BISHOP, BishopTable, BishopMagics);
+  for (Square s1 = SQ_A1; s1 <= SQ_MAX; ++s1)
+      for (Square s2 = SQ_A1; s2 <= SQ_MAX; ++s2)
+              SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
 
-  for (Square s1 = SQ_A1; s1 <= SQ_H8; ++s1)
+#ifdef PRECOMPUTED_MAGICS
+  init_magics<RIDER>(RookTableH, RookMagicsH, RookDirectionsH, RookMagicHInit);
+  init_magics<RIDER>(RookTableV, RookMagicsV, RookDirectionsV, RookMagicVInit);
+  init_magics<RIDER>(BishopTable, BishopMagics, BishopDirections, BishopMagicInit);
+  init_magics<HOPPER>(CannonTableH, CannonMagicsH, RookDirectionsH, CannonMagicHInit);
+  init_magics<HOPPER>(CannonTableV, CannonMagicsV, RookDirectionsV, CannonMagicVInit);
+  init_magics<LAME_LEAPER>(LameDabbabaTable, LameDabbabaMagics, LameDabbabaDirections, LameDabbabaMagicInit);
+  init_magics<LAME_LEAPER>(HorseTable, HorseMagics, HorseDirections, HorseMagicInit);
+  init_magics<LAME_LEAPER>(ElephantTable, ElephantMagics, ElephantDirections, ElephantMagicInit);
+  init_magics<LAME_LEAPER>(JanggiElephantTable, JanggiElephantMagics, JanggiElephantDirections, JanggiElephantMagicInit);
+  init_magics<HOPPER>(CannonDiagTable, CannonDiagMagics, BishopDirections, CannonDiagMagicInit);
+  init_magics<RIDER>(NightriderTable, NightriderMagics, HorseDirections, NightriderMagicInit);
+  init_magics<HOPPER>(GrasshopperTableH, GrasshopperMagicsH, GrasshopperDirectionsH, GrasshopperMagicHInit);
+  init_magics<HOPPER>(GrasshopperTableV, GrasshopperMagicsV, GrasshopperDirectionsV, GrasshopperMagicVInit);
+  init_magics<HOPPER>(GrasshopperTableD, GrasshopperMagicsD, GrasshopperDirectionsD, GrasshopperMagicDInit);
+#else
+  init_magics<RIDER>(RookTableH, RookMagicsH, RookDirectionsH);
+  init_magics<RIDER>(RookTableV, RookMagicsV, RookDirectionsV);
+  init_magics<RIDER>(BishopTable, BishopMagics, BishopDirections);
+  init_magics<HOPPER>(CannonTableH, CannonMagicsH, RookDirectionsH);
+  init_magics<HOPPER>(CannonTableV, CannonMagicsV, RookDirectionsV);
+  init_magics<LAME_LEAPER>(LameDabbabaTable, LameDabbabaMagics, LameDabbabaDirections);
+  init_magics<LAME_LEAPER>(HorseTable, HorseMagics, HorseDirections);
+  init_magics<LAME_LEAPER>(ElephantTable, ElephantMagics, ElephantDirections);
+  init_magics<LAME_LEAPER>(JanggiElephantTable, JanggiElephantMagics, JanggiElephantDirections);
+  init_magics<HOPPER>(CannonDiagTable, CannonDiagMagics, BishopDirections);
+  init_magics<RIDER>(NightriderTable, NightriderMagics, HorseDirections);
+  init_magics<HOPPER>(GrasshopperTableH, GrasshopperMagicsH, GrasshopperDirectionsH);
+  init_magics<HOPPER>(GrasshopperTableV, GrasshopperMagicsV, GrasshopperDirectionsV);
+  init_magics<HOPPER>(GrasshopperTableD, GrasshopperMagicsD, GrasshopperDirectionsD);
+#endif
+
+  init_pieces();
+
+  for (Square s1 = SQ_A1; s1 <= SQ_MAX; ++s1)
   {
-      PawnAttacks[WHITE][s1] = pawn_attacks_bb<WHITE>(square_bb(s1));
-      PawnAttacks[BLACK][s1] = pawn_attacks_bb<BLACK>(square_bb(s1));
-
-      for (int step : {-9, -8, -7, -1, 1, 7, 8, 9} )
-         PseudoAttacks[KING][s1] |= safe_destination(s1, step);
-
-      for (int step : {-17, -15, -10, -6, 6, 10, 15, 17} )
-         PseudoAttacks[KNIGHT][s1] |= safe_destination(s1, step);
-
-      PseudoAttacks[QUEEN][s1]  = PseudoAttacks[BISHOP][s1] = attacks_bb<BISHOP>(s1, 0);
-      PseudoAttacks[QUEEN][s1] |= PseudoAttacks[  ROOK][s1] = attacks_bb<  ROOK>(s1, 0);
-
       for (PieceType pt : { BISHOP, ROOK })
-          for (Square s2 = SQ_A1; s2 <= SQ_H8; ++s2)
+          for (Square s2 = SQ_A1; s2 <= SQ_MAX; ++s2)
           {
-              if (PseudoAttacks[pt][s1] & s2)
+              if (PseudoAttacks[WHITE][pt][s1] & s2)
               {
-                  LineBB[s1][s2]    = (attacks_bb(pt, s1, 0) & attacks_bb(pt, s2, 0)) | s1 | s2;
-                  BetweenBB[s1][s2] = (attacks_bb(pt, s1, square_bb(s2)) & attacks_bb(pt, s2, square_bb(s1)));
+                  LineBB[s1][s2]    = (attacks_bb(WHITE, pt, s1, 0) & attacks_bb(WHITE, pt, s2, 0)) | s1 | s2;
+                  BetweenBB[s1][s2] = (attacks_bb(WHITE, pt, s1, square_bb(s2)) & attacks_bb(WHITE, pt, s2, square_bb(s1)));
               }
               BetweenBB[s1][s2] |= s2;
           }
@@ -121,41 +381,39 @@ void Bitboards::init() {
 
 namespace {
 
-  Bitboard sliding_attack(PieceType pt, Square sq, Bitboard occupied) {
-
-    Bitboard attacks = 0;
-    Direction   RookDirections[4] = {NORTH, SOUTH, EAST, WEST};
-    Direction BishopDirections[4] = {NORTH_EAST, SOUTH_EAST, SOUTH_WEST, NORTH_WEST};
-
-    for (Direction d : (pt == ROOK ? RookDirections : BishopDirections))
-    {
-        Square s = sq;
-        while (safe_destination(s, d) && !(occupied & s))
-            attacks |= (s += d);
-    }
-
-    return attacks;
-  }
-
-
   // init_magics() computes all rook and bishop attacks at startup. Magic
   // bitboards are used to look up attacks of sliding pieces. As a reference see
   // www.chessprogramming.org/Magic_Bitboards. In particular, here we use the so
   // called "fancy" approach.
 
-  void init_magics(PieceType pt, Bitboard table[], Magic magics[]) {
+  template <MovementType MT>
+#ifdef PRECOMPUTED_MAGICS
+  void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> directions, const Bitboard magicsInit[]) {
+#else
+  void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> directions) {
+#endif
 
     // Optimal PRNG seeds to pick the correct magics in the shortest time
+#ifndef PRECOMPUTED_MAGICS
+#ifdef LARGEBOARDS
+    int seeds[][RANK_NB] = { { 734, 10316, 55013, 32803, 12281, 15100,  16645, 255, 346, 89123 },
+                             { 734, 10316, 55013, 32803, 12281, 15100,  16645, 255, 346, 89123 } };
+#else
     int seeds[][RANK_NB] = { { 8977, 44560, 54343, 38998,  5731, 95205, 104912, 17020 },
                              {  728, 10316, 55013, 32803, 12281, 15100,  16645,   255 } };
+#endif
+#endif
 
-    Bitboard occupancy[4096], reference[4096], edges, b;
-    int epoch[4096] = {}, cnt = 0, size = 0;
+    Bitboard* occupancy = new Bitboard[1 << (FILE_NB + RANK_NB - 4)];
+    Bitboard* reference = new Bitboard[1 << (FILE_NB + RANK_NB - 4)];
+    Bitboard edges, b;
+    int* epoch = new int[1 << (FILE_NB + RANK_NB - 4)]();
+    int cnt = 0, size = 0;
 
-    for (Square s = SQ_A1; s <= SQ_H8; ++s)
+    for (Square s = SQ_A1; s <= SQ_MAX; ++s)
     {
         // Board edges are not considered in the relevant occupancies
-        edges = ((Rank1BB | Rank8BB) & ~rank_bb(s)) | ((FileABB | FileHBB) & ~file_bb(s));
+        edges = ((Rank1BB | rank_bb(RANK_MAX)) & ~rank_bb(s)) | ((FileABB | file_bb(FILE_MAX)) & ~file_bb(s));
 
         // Given a square 's', the mask is the bitboard of sliding attacks from
         // 's' computed on an empty board. The index must be big enough to contain
@@ -163,8 +421,13 @@ namespace {
         // the number of 1s of the mask. Hence we deduce the size of the shift to
         // apply to the 64 or 32 bits word to get the index.
         Magic& m = magics[s];
-        m.mask  = sliding_attack(pt, s, 0) & ~edges;
+        // The mask for hoppers is unlimited distance, even if the hopper is limited distance (e.g., grasshopper)
+        m.mask  = (MT == LAME_LEAPER ? lame_leaper_path(directions, s) : sliding_attack<MT == HOPPER ? HOPPER_RANGE : MT>(directions, s, 0)) & ~edges;
+#ifdef LARGEBOARDS
+        m.shift = 128 - popcount(m.mask);
+#else
         m.shift = (Is64Bit ? 64 : 32) - popcount(m.mask);
+#endif
 
         // Set the offset for the attacks table of the square. We have individual
         // table sizes for each square with "Fancy Magic Bitboards".
@@ -175,7 +438,7 @@ namespace {
         b = size = 0;
         do {
             occupancy[size] = b;
-            reference[size] = sliding_attack(pt, s, b);
+            reference[size] = MT == LAME_LEAPER ? lame_leaper_attack(directions, s, b) : sliding_attack<MT>(directions, s, b);
 
             if (HasPext)
                 m.attacks[pext(b, m.mask)] = reference[size];
@@ -187,14 +450,26 @@ namespace {
         if (HasPext)
             continue;
 
+#ifndef PRECOMPUTED_MAGICS
         PRNG rng(seeds[Is64Bit][rank_of(s)]);
+#endif
 
         // Find a magic for square 's' picking up an (almost) random number
         // until we find the one that passes the verification test.
         for (int i = 0; i < size; )
         {
-            for (m.magic = 0; popcount((m.magic * m.mask) >> 56) < 6; )
+            for (m.magic = 0; popcount((m.magic * m.mask) >> (SQUARE_NB - FILE_NB)) < FILE_NB - 2; )
+            {
+#ifdef LARGEBOARDS
+#ifdef PRECOMPUTED_MAGICS
+                m.magic = magicsInit[s];
+#else
+                m.magic = (rng.sparse_rand<Bitboard>() << 64) ^ rng.sparse_rand<Bitboard>();
+#endif
+#else
                 m.magic = rng.sparse_rand<Bitboard>();
+#endif
+            }
 
             // A good magic must map every possible occupancy to an index that
             // looks up the correct sliding attack in the attacks[s] database.
@@ -216,6 +491,10 @@ namespace {
             }
         }
     }
+
+    delete[] occupancy;
+    delete[] reference;
+    delete[] epoch;
   }
 }
 

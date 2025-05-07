@@ -4,6 +4,8 @@ clone_depth: 50
 branches:
   only:
     - master
+    - merge
+    - appveyor
 
 # Operating system (build VM template)
 os: Visual Studio 2019
@@ -30,7 +32,7 @@ init:
 before_build:
   - ps: |
       # Get sources
-      $src = get-childitem -Path *.cpp -Recurse | select -ExpandProperty FullName
+      $src = get-childitem -Path *.cpp -Recurse -Exclude pyffish.cpp,ffishjs.cpp | select -ExpandProperty FullName
       $src = $src -join ' '
       $src = $src.Replace("\", "/")
 
@@ -42,9 +44,10 @@ before_build:
            'set (CMAKE_CXX_EXTENSIONS OFF)',
            'set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/src)',
            'set(source_files', $src, ')',
+           'add_compile_definitions(NNUE_EMBEDDING_OFF)',
            'add_executable(stockfish ${source_files})'
 
-      # Write CMakeLists.txt withouth BOM
+      # Write CMakeLists.txt without BOM
       $MyPath = (Get-Item -Path "." -Verbose).FullName + '\CMakeLists.txt'
       $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False
       [System.IO.File]::WriteAllLines($MyPath, $t, $Utf8NoBomEncoding)
@@ -67,7 +70,7 @@ build_script:
       $dummy = $nnuenet -match "(?<nnuenet>nn-[a-z0-9]{12}.nnue)"
       $nnuenet = $Matches.nnuenet
       Write-Host "Default net:" $nnuenet
-      $nnuedownloadurl = "https://tests.stockfishchess.org/api/nn/$nnuenet"
+      $nnuedownloadurl = "https://github.com/official-stockfish/networks/raw/master/$nnuenet"
       $nnuefilepath = "src\${env:CONFIGURATION}\$nnuenet"
       if (Test-Path -Path $nnuefilepath) {
             Write-Host "Already available."

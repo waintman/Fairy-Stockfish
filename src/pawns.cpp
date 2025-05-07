@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -40,7 +40,7 @@ namespace {
   constexpr Score WeakUnopposed = S(13, 24);
 
   // Bonus for blocked pawns at 5th or 6th rank
-  constexpr Score BlockedPawn[2] = { S(-17, -6), S(-9, 2) };
+  constexpr Score BlockedPawn[RANK_NB - 5] = { S(-17, -6), S(-9, 2) };
 
   constexpr Score BlockedStorm[RANK_NB] = {
     S(0, 0), S(0, 0), S(75, 78), S(-8, 16), S(-6, 10), S(-6, 6), S(0, 2)
@@ -74,6 +74,11 @@ namespace {
   // for king when the king is on a semi-open or open file.
   constexpr Score KingOnFile[2][2] = {{ S(-21,10), S(-7, 1)  },
                                      {  S(  0,-3), S( 9,-4) }};
+
+
+  // Variant bonuses
+  constexpr int HordeConnected[2][RANK_NB] = {{   5, 10,  20, 55, 55, 100, 80 },
+                                              { -10,  5, -10,  5, 25,  40, 30 }};
 
   #undef S
   #undef V
@@ -115,18 +120,18 @@ namespace {
 
         assert(pos.piece_on(s) == make_piece(Us, PAWN));
 
-        Rank r = relative_rank(Us, s);
+        Rank r = relative_rank(Us, s, pos.max_rank());
 
         // Flag the pawn
         opposed    = theirPawns & forward_file_bb(Us, s);
-        blocked    = theirPawns & (s + Up);
+        blocked    = is_ok(s + Up) ? theirPawns & (s + Up) : Bitboard(0);
         stoppers   = theirPawns & passed_pawn_span(Us, s);
         lever      = theirPawns & pawn_attacks_bb(Us, s);
-        leverPush  = theirPawns & pawn_attacks_bb(Us, s + Up);
-        doubled    = ourPawns   & (s - Up);
+        leverPush  = relative_rank(Them, s, pos.max_rank()) > RANK_1 ? theirPawns & pawn_attacks_bb(Us, s + Up) : Bitboard(0);
+        doubled    = r > RANK_1 ? ourPawns & (s - Up) : Bitboard(0);
         neighbours = ourPawns   & adjacent_files_bb(s);
         phalanx    = neighbours & rank_bb(s);
-        support    = neighbours & rank_bb(s - Up);
+        support    = r > RANK_1 ? neighbours & rank_bb(s - Up) : Bitboard(0);
 
         if (doubled)
         {
@@ -137,8 +142,9 @@ namespace {
 
         // A pawn is backward when it is behind all pawns of the same color on
         // the adjacent files and cannot safely advance.
-        backward =  !(neighbours & forward_ranks_bb(Them, s + Up))
-                  && (leverPush | blocked);
+        backward =   is_ok(s + Up)
+                  && !(neighbours & forward_ranks_bb(Them, s + Up))
+                  && (stoppers & blocked);
 
         // Compute additional span if pawn is not backward nor blocked
         if (!backward && !blocked)
@@ -159,14 +165,16 @@ namespace {
 
         // Passed pawns will be properly scored later in evaluation when we have
         // full attack info.
-        if (passed)
+        if (passed && pos.promotion_square(Us, s) != SQ_NONE && !pos.sittuyin_promotion())
             e->passedPawns[Us] |= s;
 
         // Score this pawn
-        if (support | phalanx)
+        if ((support | phalanx) && !pos.sittuyin_promotion())
         {
-            int v =  Connected[r] * (2 + bool(phalanx) - bool(opposed))
+            int v =  Connected[r] * (2 + bool(phalanx) - bool(opposed)) * (r == RANK_2 && pos.captures_to_hand() ? 3 : 1)
                    + 22 * popcount(support);
+            if (pos.count<PAWN>(Us) > popcount(pos.board_bb()) / 4)
+                v = popcount(support | phalanx) * HordeConnected[bool(opposed)][r];
 
             score += make_score(v, v * (r - 2) / 4);
         }
@@ -176,9 +184,9 @@ namespace {
             if (     opposed
                 &&  (ourPawns & forward_file_bb(Them, s))
                 && !(theirPawns & adjacent_files_bb(s)))
-                score -= Doubled;
+                score -= Doubled * (1 + 2 * pos.must_capture());
             else
-                score -=  Isolated
+                score -=  Isolated * (1 + 2 * pos.must_capture())
                         + WeakUnopposed * !opposed;
         }
 
@@ -193,6 +201,10 @@ namespace {
         if (blocked && r >= RANK_5)
             score += BlockedPawn[r - RANK_5];
     }
+
+    // Double pawn evaluation if there are no non-pawn pieces
+    if (pos.count<ALL_PIECES>(Us) == pos.count<PAWN>(Us))
+        score = score * 2;
 
     return score;
   }
@@ -212,7 +224,7 @@ Entry* probe(const Position& pos) {
   Key key = pos.pawn_key();
   Entry* e = pos.this_thread()->pawnsTable[key];
 
-  if (e->key == key)
+  if (e->key == key && !pos.pieces(SHOGI_PAWN))
       return e;
 
   e->key = key;
@@ -232,23 +244,24 @@ Score Entry::evaluate_shelter(const Position& pos, Square ksq) const {
 
   constexpr Color Them = ~Us;
 
-  Bitboard b = pos.pieces(PAWN) & ~forward_ranks_bb(Them, ksq);
+  Bitboard b = pos.pieces(PAWN, SHOGI_PAWN) & ~forward_ranks_bb(Them, ksq);
   Bitboard ourPawns = b & pos.pieces(Us) & ~pawnAttacks[Them];
   Bitboard theirPawns = b & pos.pieces(Them);
 
   Score bonus = make_score(5, 5);
 
-  File center = std::clamp(file_of(ksq), FILE_B, FILE_G);
+  File center = std::clamp(file_of(ksq), FILE_B, File(pos.max_file() - 1));
   for (File f = File(center - 1); f <= File(center + 1); ++f)
   {
       b = ourPawns & file_bb(f);
-      int ourRank = b ? relative_rank(Us, frontmost_sq(Them, b)) : 0;
+      int ourRank = b ? relative_rank(Us, frontmost_sq(Them, b), pos.max_rank()) : 0;
 
       b = theirPawns & file_bb(f);
-      int theirRank = b ? relative_rank(Us, frontmost_sq(Them, b)) : 0;
+      int theirRank = b ? relative_rank(Us, frontmost_sq(Them, b), pos.max_rank()) : 0;
 
-      int d = edge_distance(f);
-      bonus += make_score(ShelterStrength[d][ourRank], 0);
+      int d = std::min(File(edge_distance(f, pos.max_file())), FILE_D);
+      bonus += make_score(ShelterStrength[d][ourRank], 0) * (1 + (pos.captures_to_hand() && ourRank <= RANK_2)
+                                                               + (pos.check_counting() && d == 0 && ourRank == RANK_2));
 
       if (ourRank && (ourRank == theirRank - 1))
           bonus -= BlockedStorm[theirRank];
@@ -279,10 +292,10 @@ Score Entry::do_king_safety(const Position& pos) {
   // If we can castle use the bonus after castling if it is bigger
 
   if (pos.can_castle(Us & KING_SIDE))
-      shelter = std::max(shelter, evaluate_shelter<Us>(pos, relative_square(Us, SQ_G1)), compare);
+      shelter = std::max(shelter, evaluate_shelter<Us>(pos, make_square(pos.castling_kingside_file(), pos.castling_rank(Us))), compare);
 
   if (pos.can_castle(Us & QUEEN_SIDE))
-      shelter = std::max(shelter, evaluate_shelter<Us>(pos, relative_square(Us, SQ_C1)), compare);
+      shelter = std::max(shelter, evaluate_shelter<Us>(pos, make_square(pos.castling_queenside_file(), pos.castling_rank(Us))), compare);
 
   // In endgame we like to bring our king near our closest pawn
   Bitboard pawns = pos.pieces(Us, PAWN);

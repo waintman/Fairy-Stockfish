@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -198,8 +198,8 @@ namespace Stockfish::Eval::NNUE {
     bool read_parameters(std::istream& stream) {
 
       read_little_endian<BiasType      >(stream, biases     , HalfDimensions                  );
-      read_little_endian<WeightType    >(stream, weights    , HalfDimensions * InputDimensions);
-      read_little_endian<PSQTWeightType>(stream, psqtWeights, PSQTBuckets    * InputDimensions);
+      read_little_endian<WeightType    >(stream, weights    , HalfDimensions * FeatureSet::get_dimensions());
+      read_little_endian<PSQTWeightType>(stream, psqtWeights, PSQTBuckets    * FeatureSet::get_dimensions());
 
       return !stream.fail();
     }
@@ -208,8 +208,8 @@ namespace Stockfish::Eval::NNUE {
     bool write_parameters(std::ostream& stream) const {
 
       write_little_endian<BiasType      >(stream, biases     , HalfDimensions                  );
-      write_little_endian<WeightType    >(stream, weights    , HalfDimensions * InputDimensions);
-      write_little_endian<PSQTWeightType>(stream, psqtWeights, PSQTBuckets    * InputDimensions);
+      write_little_endian<WeightType    >(stream, weights    , HalfDimensions * FeatureSet::get_dimensions());
+      write_little_endian<PSQTWeightType>(stream, psqtWeights, PSQTBuckets    * FeatureSet::get_dimensions());
 
       return !stream.fail();
     }
@@ -387,7 +387,7 @@ namespace Stockfish::Eval::NNUE {
       {
         // This governs when a full feature refresh is needed and how many
         // updates are better than just one full refresh.
-        if (   FeatureSet::requires_refresh(st, perspective)
+        if (   FeatureSet::requires_refresh(st, perspective, pos)
             || (gain -= FeatureSet::update_cost(st) + 1) < 0)
           break;
         next = st;
@@ -403,13 +403,13 @@ namespace Stockfish::Eval::NNUE {
         // accumulator. Then, we update the current accumulator (pos.state()).
 
         // Gather all features to be updated.
-        const Square ksq = pos.square<KING>(perspective);
+        const Square ksq = pos.nnue_king_square(perspective);
         IndexList removed[2], added[2];
         FeatureSet::append_changed_indices(
-          ksq, next, perspective, removed[0], added[0]);
+          ksq, next, perspective, removed[0], added[0], pos);
         for (StateInfo *st2 = pos.state(); st2 != next; st2 = st2->previous)
           FeatureSet::append_changed_indices(
-            ksq, st2, perspective, removed[1], added[1]);
+            ksq, st2, perspective, removed[1], added[1], pos);
 
         // Mark the accumulators as computed.
         next->accumulator.computed[perspective] = true;

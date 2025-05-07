@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -79,20 +79,22 @@ template <typename T, int D, int Size>
 struct Stats<T, D, Size> : public std::array<StatsEntry<T, D>, Size> {};
 
 /// In stats table, D=0 means that the template parameter is not used
-enum StatsParams { NOT_USED = 0 };
+enum StatsParams { NOT_USED = 0, PIECE_SLOTS = 8 };
 enum StatsType { NoCaptures, Captures };
 
 /// ButterflyHistory records how often quiet moves have been successful or
 /// unsuccessful during the current search, and is used for reduction and move
 /// ordering decisions. It uses 2 tables (one for each color) indexed by
 /// the move's from and to squares, see www.chessprogramming.org/Butterfly_Boards
-typedef Stats<int16_t, 13365, COLOR_NB, int(SQUARE_NB) * int(SQUARE_NB)> ButterflyHistory;
+typedef Stats<int16_t, 13365, COLOR_NB, int(SQUARE_NB + 1) * int(1 << SQUARE_BITS)> ButterflyHistory;
+
+typedef Stats<int16_t, 13365, COLOR_NB, SQUARE_NB> GateHistory;
 
 /// At higher depths LowPlyHistory records successful quiet moves near the root
 /// and quiet moves which are/were in the PV (ttPv). It is cleared with each new
 /// search and filled during iterative deepening.
 constexpr int MAX_LPH = 4;
-typedef Stats<int16_t, 10692, MAX_LPH, int(SQUARE_NB) * int(SQUARE_NB)> LowPlyHistory;
+typedef Stats<int16_t, 10692, MAX_LPH, int(SQUARE_NB + 1) * int(1 << SQUARE_BITS)> LowPlyHistory;
 
 /// CounterMoveHistory stores counter moves indexed by [piece][to] of the previous
 /// move, see www.chessprogramming.org/Countermove_Heuristic
@@ -102,13 +104,14 @@ typedef Stats<Move, NOT_USED, PIECE_NB, SQUARE_NB> CounterMoveHistory;
 typedef Stats<int16_t, 10692, PIECE_NB, SQUARE_NB, PIECE_TYPE_NB> CapturePieceToHistory;
 
 /// PieceToHistory is like ButterflyHistory but is addressed by a move's [piece][to]
-typedef Stats<int16_t, 29952, PIECE_NB, SQUARE_NB> PieceToHistory;
+typedef Stats<int16_t, 29952, 2 * PIECE_SLOTS, SQUARE_NB> PieceToHistory;
 
 /// ContinuationHistory is the combined history of a given pair of moves, usually
 /// the current one given a previous one. The nested history table is based on
 /// PieceToHistory instead of ButterflyBoards.
-typedef Stats<PieceToHistory, NOT_USED, PIECE_NB, SQUARE_NB> ContinuationHistory;
+typedef Stats<PieceToHistory, NOT_USED, 2 * PIECE_SLOTS, SQUARE_NB> ContinuationHistory;
 
+int history_slot(Piece pc);
 
 /// MovePicker class is used to pick one pseudo-legal move at a time from the
 /// current position. The most important method is next_move(), which returns a
@@ -123,12 +126,14 @@ class MovePicker {
 public:
   MovePicker(const MovePicker&) = delete;
   MovePicker& operator=(const MovePicker&) = delete;
-  MovePicker(const Position&, Move, Value, const CapturePieceToHistory*);
+  MovePicker(const Position&, Move, Value, const GateHistory*, const CapturePieceToHistory*);
   MovePicker(const Position&, Move, Depth, const ButterflyHistory*,
+                                           const GateHistory*,
                                            const CapturePieceToHistory*,
                                            const PieceToHistory**,
                                            Square);
   MovePicker(const Position&, Move, Depth, const ButterflyHistory*,
+                                           const GateHistory*,
                                            const LowPlyHistory*,
                                            const CapturePieceToHistory*,
                                            const PieceToHistory**,
@@ -145,6 +150,7 @@ private:
 
   const Position& pos;
   const ButterflyHistory* mainHistory;
+  const GateHistory* gateHistory;
   const LowPlyHistory* lowPlyHistory;
   const CapturePieceToHistory* captureHistory;
   const PieceToHistory** continuationHistory;

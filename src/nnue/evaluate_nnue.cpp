@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -160,7 +160,7 @@ namespace Stockfish::Eval::NNUE {
     ASSERT_ALIGNED(transformedFeatures, alignment);
     ASSERT_ALIGNED(buffer, alignment);
 
-    const std::size_t bucket = (pos.count<ALL_PIECES>() - 1) / 4;
+    const std::size_t bucket = std::min((pos.count<ALL_PIECES>() - 1) * 8 / currentNnueVariant->nnueMaxPieces, 7);
     const auto psqt = featureTransformer->transform(pos, transformedFeatures, bucket);
     const auto output = network[bucket]->propagate(transformedFeatures, buffer);
 
@@ -210,7 +210,7 @@ namespace Stockfish::Eval::NNUE {
     ASSERT_ALIGNED(buffer, alignment);
 
     NnueEvalTrace t{};
-    t.correctBucket = (pos.count<ALL_PIECES>() - 1) / 4;
+    t.correctBucket = std::min((pos.count<ALL_PIECES>() - 1) * 8 / currentNnueVariant->nnueMaxPieces, 7);
     for (std::size_t bucket = 0; bucket < LayerStacks; ++bucket) {
       const auto psqt = featureTransformer->transform(pos, transformedFeatures, bucket);
       const auto output = network[bucket]->propagate(transformedFeatures, buffer);
@@ -224,8 +224,6 @@ namespace Stockfish::Eval::NNUE {
 
     return t;
   }
-
-  static const std::string PieceToChar(" PNBRQK  pnbrqk");
 
   // Requires the buffer to have capacity for at least 5 values
   static void format_cp_compact(Value v, char* buffer) {
@@ -300,23 +298,23 @@ namespace Stockfish::Eval::NNUE {
 
     std::stringstream ss;
 
-    char board[3*8+1][8*8+2];
+    char board[3*RANK_NB+1][8*FILE_NB+2];
     std::memset(board, ' ', sizeof(board));
-    for (int row = 0; row < 3*8+1; ++row)
-      board[row][8*8+1] = '\0';
+    for (int row = 0; row < 3*pos.ranks()+1; ++row)
+      board[row][8*FILE_NB+1] = '\0';
 
     // A lambda to output one box of the board
-    auto writeSquare = [&board](File file, Rank rank, Piece pc, Value value) {
+    auto writeSquare = [&board, &pos](File file, Rank rank, Piece pc, Value value) {
 
       const int x = ((int)file) * 8;
-      const int y = (7 - (int)rank) * 3;
+      const int y = (pos.max_rank() - (int)rank) * 3;
       for (int i = 1; i < 8; ++i)
          board[y][x+i] = board[y+3][x+i] = '-';
       for (int i = 1; i < 3; ++i)
          board[y+i][x] = board[y+i][x+8] = '|';
       board[y][x] = board[y][x+8] = board[y+3][x+8] = board[y+3][x] = '+';
       if (pc != NO_PIECE)
-        board[y+1][x+4] = PieceToChar[pc];
+        board[y+1][x+4] = pos.piece_to_char()[pc];
       if (value != VALUE_NONE)
         format_cp_compact(value, &board[y+2][x+2]);
     };
@@ -326,14 +324,16 @@ namespace Stockfish::Eval::NNUE {
     Value base = evaluate(pos);
     base = pos.side_to_move() == WHITE ? base : -base;
 
-    for (File f = FILE_A; f <= FILE_H; ++f)
-      for (Rank r = RANK_1; r <= RANK_8; ++r)
+    for (File f = FILE_A; f <= pos.max_file(); ++f)
+      for (Rank r = RANK_1; r <= pos.max_rank(); ++r)
       {
         Square sq = make_square(f, r);
         Piece pc = pos.piece_on(sq);
+        Piece unpromotedPc = pos.unpromoted_piece_on(sq);
+        bool isPromoted = pos.is_promoted(sq);
         Value v = VALUE_NONE;
 
-        if (pc != NO_PIECE && type_of(pc) != KING)
+        if (pc != NO_PIECE && type_of(pc) != pos.nnue_king())
         {
           auto st = pos.state();
 
@@ -345,7 +345,7 @@ namespace Stockfish::Eval::NNUE {
           eval = pos.side_to_move() == WHITE ? eval : -eval;
           v = base - eval;
 
-          pos.put_piece(pc, sq);
+          pos.put_piece(pc, sq, isPromoted, unpromotedPc);
           st->accumulator.computed[WHITE] = false;
           st->accumulator.computed[BLACK] = false;
         }
@@ -354,7 +354,7 @@ namespace Stockfish::Eval::NNUE {
       }
 
     ss << " NNUE derived piece values:\n";
-    for (int row = 0; row < 3*8+1; ++row)
+    for (int row = 0; row < 3*pos.ranks()+1; ++row)
         ss << board[row] << '\n';
     ss << '\n';
 
