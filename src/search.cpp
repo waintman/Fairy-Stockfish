@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -27,12 +27,18 @@
 #include "misc.h"
 #include "movegen.h"
 #include "movepick.h"
+#ifdef FAIRY_STOCKFISH
+#include "partner.h"
+#endif
 #include "position.h"
 #include "search.h"
 #include "thread.h"
 #include "timeman.h"
 #include "tt.h"
 #include "uci.h"
+#ifdef FAIRY_STOCKFISH
+#include "xboard.h"
+#endif
 #include "syzygy/tbprobe.h"
 
 namespace Stockfish {
@@ -77,8 +83,13 @@ namespace {
     return (r + 534) / 1024 + (!i && r > 904);
   }
 
+#ifndef FAIRY_STOCKFISH
   constexpr int futility_move_count(bool improving, Depth depth) {
     return (3 + depth * depth) / (2 - improving);
+#else
+  int futility_move_count(bool improving, Depth depth, const Position& pos) {
+    return (3 + depth * depth * (1 + pos.walling()) + 2 * pos.blast_on_capture()) / (2 - improving + pos.blast_on_capture());
+#endif
   }
 
   // History and stats update bonus, based on depth
@@ -95,7 +106,11 @@ namespace {
   struct Skill {
     explicit Skill(int l) : level(l) {}
     bool enabled() const { return level < 20; }
+#ifndef FAIRY_STOCKFISH
     bool time_to_pick(Depth depth) const { return depth == 1 + level; }
+#else
+    bool time_to_pick(Depth depth) const { return depth == 1 + std::max(level, 0); }
+#endif
     Move pick_best(size_t multiPV);
 
     int level;
@@ -129,6 +144,9 @@ namespace {
 
     for (const auto& m : MoveList<LEGAL>(pos))
     {
+#ifdef FAIRY_STOCKFISH
+        assert(pos.pseudo_legal(m));
+#endif
         if (Root && depth <= 1)
             cnt = 1, nodes++;
         else
@@ -139,7 +157,11 @@ namespace {
             pos.undo_move(m);
         }
         if (Root)
+#ifndef FAIRY_STOCKFISH
             sync_cout << UCI::move(m, pos.is_chess960()) << ": " << cnt << sync_endl;
+#else
+            sync_cout << UCI::move(pos, m) << ": " << cnt << sync_endl;
+#endif
     }
     return nodes;
   }
@@ -182,16 +204,44 @@ void MainThread::search() {
   }
 
   Color us = rootPos.side_to_move();
+#ifndef FAIRY_STOCKFISH
   Time.init(Limits, us, rootPos.game_ply());
+#else
+  Time.init(rootPos, Limits, us, rootPos.game_ply());
+#endif
   TT.new_search();
 
   Eval::NNUE::verify();
 
+#ifndef FAIRY_STOCKFISH
   if (rootMoves.empty())
+#else
+  if (rootMoves.empty() || (CurrentProtocol == XBOARD && rootPos.is_optional_game_end()))
+#endif
   {
       rootMoves.emplace_back(MOVE_NONE);
+#ifdef FAIRY_STOCKFISH
+      Value variantResult;
+      Value result =  rootPos.is_game_end(variantResult) ? variantResult
+                    : rootPos.checkers()                 ? rootPos.checkmate_value()
+                                                         : rootPos.stalemate_value();
+      if (CurrentProtocol == XBOARD)
+      {
+          // rotate MOVE_NONE to front (for optional game end)
+          std::rotate(rootMoves.rbegin(), rootMoves.rbegin() + 1, rootMoves.rend());
+          sync_cout << (  result == VALUE_DRAW ? "1/2-1/2 {Draw}"
+                        : (rootPos.side_to_move() == BLACK ? -result : result) == VALUE_MATE ? "1-0 {White wins}"
+                        : "0-1 {Black wins}")
+                    << sync_endl;
+      }
+      else
+#endif
       sync_cout << "info depth 0 score "
+#ifndef FAIRY_STOCKFISH
                 << UCI::value(rootPos.checkers() ? -VALUE_MATE : VALUE_DRAW)
+#else
+                << UCI::value(result)
+#endif
                 << sync_endl;
   }
   else
@@ -199,6 +249,15 @@ void MainThread::search() {
       Threads.start_searching(); // start non-main threads
       Thread::search();          // main thread start searching
   }
+#ifdef FAIRY_STOCKFISH
+
+  // Sit in bughouse variants if partner requested it or we are dead
+  if (rootPos.two_boards() && !Threads.abort && CurrentProtocol == XBOARD)
+  {
+      while (!Threads.stop && (Partner.sitRequested || (Partner.weDead && !Partner.partnerDead)) && Time.elapsed() < Limits.time[us] - 1000)
+      {}
+  }
+#endif
 
   // When we reach the maximum depth, we can arrive here without a raise of
   // Threads.stop. However, if we are pondering or in an infinite search,
@@ -221,7 +280,11 @@ void MainThread::search() {
   if (Limits.npmsec)
       Time.availableNodes += Limits.inc[us] - Threads.nodes_searched();
 
+#ifndef FAIRY_STOCKFISH
   Thread* bestThread = this;
+#else
+  bestThread = this;
+#endif
 
   if (   int(Options["MultiPV"]) == 1
       && !Limits.depth
@@ -235,10 +298,59 @@ void MainThread::search() {
   if (bestThread != this)
       sync_cout << UCI::pv(bestThread->rootPos, bestThread->completedDepth, -VALUE_INFINITE, VALUE_INFINITE) << sync_endl;
 
+#ifndef FAIRY_STOCKFISH
   sync_cout << "bestmove " << UCI::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
+#else
+  if (CurrentProtocol == XBOARD)
+  {
+      Move bestMove = bestThread->rootMoves[0].pv[0];
+      // Wait for virtual drop to become real
+      if (rootPos.two_boards() && rootPos.virtual_drop(bestMove))
+      {
+          Partner.ptell("fast");
+          while (!Threads.abort && !Partner.partnerDead && !Partner.fast && Limits.time[us] - Time.elapsed() > Partner.opptime)
+          {}
+          Partner.ptell("x");
+          // Find best real move
+          for (const auto& m : this->rootMoves)
+              if (!rootPos.virtual_drop(m.pv[0]))
+              {
+                  bestMove = m.pv[0];
+                  break;
+              }
+      }
+      // Send move only when not in analyze mode and not at game end
+      if (!Limits.infinite && !ponder && rootMoves[0].pv[0] != MOVE_NONE && !Threads.abort.exchange(true))
+      {
+          std::string move = UCI::move(rootPos, bestMove);
+          if (rootPos.walling())
+          {
+              sync_cout << "move " << move.substr(0, move.find(",")) << "," << sync_endl;
+              sync_cout << "move " << move.substr(move.find(",") + 1) << sync_endl;
+          }
+          else
+              sync_cout << "move " << UCI::move(rootPos, bestMove) << sync_endl;
+          if (XBoard::stateMachine->moveAfterSearch)
+          {
+              XBoard::stateMachine->do_move(bestMove);
+              XBoard::stateMachine->moveAfterSearch = false;
+              if (Options["Ponder"] && (   bestThread->rootMoves[0].pv.size() > 1
+                                        || bestThread->rootMoves[0].extract_ponder_from_tt(rootPos)))
+                  XBoard::stateMachine->ponderMove = bestThread->rootMoves[0].pv[1];
+          }
+      }
+      return;
+  }
+
+  sync_cout << "bestmove " << UCI::move(rootPos, bestThread->rootMoves[0].pv[0]);
+#endif
 
   if (bestThread->rootMoves[0].pv.size() > 1 || bestThread->rootMoves[0].extract_ponder_from_tt(rootPos))
+#ifndef FAIRY_STOCKFISH
       std::cout << " ponder " << UCI::move(bestThread->rootMoves[0].pv[1], rootPos.is_chess960());
+#else
+      std::cout << " ponder " << UCI::move(rootPos, bestThread->rootMoves[0].pv[1]);
+#endif
 
   std::cout << sync_endl;
 }
@@ -297,8 +409,17 @@ void Thread::search() {
   // to CCRL Elo (goldfish 1.13 = 2000) and a fit through Ordo derived Elo
   // for match (TC 60+0.6) results spanning a wide range of k values.
   PRNG rng(now());
+#ifdef FAIRY_STOCKFISH
+  double shiftedElo = Options["UCI_Elo"] - 1346.6;
+#endif
   double floatLevel = Options["UCI_LimitStrength"] ?
+#ifndef FAIRY_STOCKFISH
                       std::clamp(std::pow((Options["UCI_Elo"] - 1346.6) / 143.4, 1 / 0.806), 0.0, 20.0) :
+#else
+                      std::clamp(shiftedElo > 0 ? std::pow(shiftedElo / 143.4, 1 / 0.806)
+                                                : shiftedElo / 143.4 + std::pow(shiftedElo / 500, 5),
+                                 -20.0, 20.0) :
+#endif
                         double(Options["Skill Level"]);
   int intLevel = int(floatLevel) +
                  ((floatLevel - int(floatLevel)) * 1024 > rng.rand<unsigned>() % 1024  ? 1 : 0);
@@ -354,7 +475,11 @@ void Thread::search() {
           if (rootDepth >= 4)
           {
               Value prev = rootMoves[pvIdx].previousScore;
+#ifndef FAIRY_STOCKFISH
               delta = Value(17);
+#else
+              delta = Value(17 * (1 + rootPos.captures_to_hand()));
+#endif
               alpha = std::max(prev - delta,-VALUE_INFINITE);
               beta  = std::min(prev + delta, VALUE_INFINITE);
 
@@ -477,6 +602,75 @@ void Thread::search() {
           if (rootMoves.size() == 1)
               totalTime = std::min(500.0, totalTime);
 
+#ifdef FAIRY_STOCKFISH
+          // Update partner in bughouse variants
+          if (completedDepth >= 8 && rootPos.two_boards() && CurrentProtocol == XBOARD)
+          {
+              // Communicate clock times relevant for sitting decisions
+              if (Limits.time[us])
+                  Partner.ptell<FAIRY>("time " + std::to_string((Limits.time[us] - Time.elapsed()) / 10));
+              if (Limits.time[~us])
+                  Partner.ptell<FAIRY>("otim " + std::to_string(Limits.time[~us] / 10));
+              // We are dead and need to sit
+              if (!Partner.weDead && bestValue <= VALUE_MATED_IN_MAX_PLY)
+              {
+                  Partner.ptell("dead");
+                  Partner.weDead = true;
+              }
+              // We were dead but are fine again
+              else if (Partner.weDead && bestValue > VALUE_MATED_IN_MAX_PLY)
+              {
+                  Partner.ptell("x");
+                  Partner.weDead = false;
+              }
+              // We win by force, so partner should sit
+              else if (!Partner.weWin && bestValue >= VALUE_MATE_IN_MAX_PLY && Limits.time[~us] < Partner.time)
+              {
+                  Partner.ptell("sit");
+                  Partner.weWin = true;
+              }
+              // We are no longer winning
+              else if (Partner.weWin && (bestValue < VALUE_MATE_IN_MAX_PLY || Limits.time[~us] > Partner.time))
+              {
+                  Partner.ptell("x");
+                  Partner.weWin = false;
+              }
+              // We can win if partner delivers required material quickly
+              else if (  !Partner.weVirtualWin
+                       && bestValue >= VALUE_VIRTUAL_MATE_IN_MAX_PLY
+                       && bestValue <= VALUE_VIRTUAL_MATE
+                       && Limits.time[us] - Time.elapsed() > Partner.opptime)
+              {
+                  Partner.ptell("fast");
+                  Partner.weVirtualWin = true;
+              }
+              // Virtual mate is gone
+              else if (   Partner.weVirtualWin
+                       && (bestValue < VALUE_VIRTUAL_MATE_IN_MAX_PLY || bestValue > VALUE_VIRTUAL_MATE || Limits.time[us] - Time.elapsed() < Partner.opptime))
+              {
+                  Partner.ptell("slow");
+                  Partner.weVirtualWin = false;
+              }
+              // We need to survive a virtual mate and play fast
+              else if (  !Partner.weVirtualLoss
+                       && (bestValue <= -VALUE_VIRTUAL_MATE_IN_MAX_PLY && bestValue >= -VALUE_VIRTUAL_MATE)
+                       && Limits.time[~us] > Partner.time)
+              {
+                  Partner.ptell("sit");
+                  Partner.weVirtualLoss = true;
+                  Partner.fast = true;
+              }
+              // Virtual mate threat is over
+              else if (   Partner.weVirtualLoss
+                       && (bestValue > -VALUE_VIRTUAL_MATE_IN_MAX_PLY || bestValue < -VALUE_VIRTUAL_MATE || Limits.time[~us] < Partner.time))
+              {
+                  Partner.ptell("x");
+                  Partner.weVirtualLoss = false;
+                  Partner.fast = false;
+              }
+          }
+
+#endif
           // Stop the search if we have exceeded the totalTime
           if (Time.elapsed() > totalTime)
           {
@@ -484,7 +678,11 @@ void Thread::search() {
               // keep pondering until the GUI sends "ponderhit" or "stop".
               if (mainThread->ponder)
                   mainThread->stopOnPonderhit = true;
+#ifndef FAIRY_STOCKFISH
               else
+#else
+              else if (!(rootPos.two_boards() && (Partner.sitRequested || Partner.weDead)))
+#endif
                   Threads.stop = true;
           }
           else if (   Threads.increaseDepth
@@ -577,9 +775,17 @@ namespace {
 
     if (!rootNode)
     {
+#ifdef FAIRY_STOCKFISH
+        Value variantResult;
+        if (pos.is_game_end(variantResult, ss->ply))
+            return variantResult;
+
+#endif
         // Step 2. Check for aborted search and immediate draw
         if (   Threads.stop.load(std::memory_order_relaxed)
+#ifndef FAIRY_STOCKFISH
             || pos.is_draw(ss->ply)
+#endif
             || ss->ply >= MAX_PLY)
             return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos)
                                                         : value_draw(pos.this_thread());
@@ -662,6 +868,10 @@ namespace {
             {
                 int penalty = -stat_bonus(depth);
                 thisThread->mainHistory[us][from_to(ttMove)] << penalty;
+#ifdef FAIRY_STOCKFISH
+                if (pos.walling())
+                    thisThread->gateHistory[us][gating_square(ttMove)] << penalty;
+#endif
                 update_continuation_histories(ss, pos.moved_piece(ttMove), to_sq(ttMove), penalty);
             }
         }
@@ -680,6 +890,9 @@ namespace {
         if (    piecesCount <= TB::Cardinality
             && (piecesCount <  TB::Cardinality || depth >= TB::ProbeDepth)
             &&  pos.rule50_count() == 0
+#ifdef FAIRY_STOCKFISH
+            &&  Options["UCI_Variant"] == "chess"
+#endif
             && !pos.can_castle(ANY_CASTLING))
         {
             TB::ProbeState err;
@@ -778,10 +991,21 @@ namespace {
                ? ss->staticEval > (ss-4)->staticEval || (ss-4)->staticEval == VALUE_NONE
                : ss->staticEval > (ss-2)->staticEval;
 
+#ifdef FAIRY_STOCKFISH
+    // Skip early pruning in case of mandatory capture
+    if (pos.must_capture() && pos.has_capture())
+        goto moves_loop;
+
+#endif
     // Step 7. Futility pruning: child node (~50 Elo)
     if (   !PvNode
+#ifndef FAIRY_STOCKFISH
         &&  depth < 9
         &&  eval - futility_margin(depth, improving) >= beta
+#else
+        &&  depth < 9 - 3 * pos.blast_on_capture()
+        &&  eval - futility_margin(depth, improving) * (1 + pos.check_counting() + 2 * pos.must_capture() + pos.extinction_single_piece() + !pos.checking_permitted()) >= beta
+#endif
         &&  eval < VALUE_KNOWN_WIN) // Do not return unproven wins
         return eval;
 
@@ -791,15 +1015,27 @@ namespace {
         && (ss-1)->statScore < 23767
         &&  eval >= beta
         &&  eval >= ss->staticEval
+#ifndef FAIRY_STOCKFISH
         &&  ss->staticEval >= beta - 20 * depth - 22 * improving + 168 * ss->ttPv + 159
+#else
+        &&  ss->staticEval >= beta - 20 * depth - 22 * improving + 168 * ss->ttPv + 159 + 200 * (!pos.double_step_region(pos.side_to_move()) && (pos.piece_types() & PAWN))
+#endif
         && !excludedMove
         &&  pos.non_pawn_material(us)
+#ifdef FAIRY_STOCKFISH
+        &&  pos.count<ALL_PIECES>(~us) != pos.count<PAWN>(~us)
+        && !pos.flip_enclosed_pieces()
+#endif
         && (ss->ply >= thisThread->nmpMinPly || us != thisThread->nmpColor))
     {
         assert(eval - beta >= 0);
 
         // Null move dynamic reduction based on depth and value
+#ifndef FAIRY_STOCKFISH
         Depth R = (1090 + 81 * depth) / 256 + std::min(int(eval - beta) / 205, 3);
+#else
+        Depth R = (1090 - 300 * pos.must_capture() - 250 * !pos.checking_permitted() + 81 * depth) / 256 + std::min(int(eval - beta) / 205, pos.must_capture() || pos.blast_on_capture() ? 0 : 3);
+#endif
 
         ss->currentMove = MOVE_NULL;
         ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][0];
@@ -835,7 +1071,11 @@ namespace {
         }
     }
 
+#ifndef FAIRY_STOCKFISH
     probCutBeta = beta + 209 - 44 * improving;
+#else
+    probCutBeta = beta + (209 + 20 * !!pos.flag_region(~pos.side_to_move()) + 50 * pos.captures_to_hand()) * (1 + pos.check_counting() + pos.extinction_single_piece()) - 44 * improving;
+#endif
 
     // Step 9. ProbCut (~4 Elo)
     // If we have a good enough capture and a reduced search returns a value
@@ -854,7 +1094,11 @@ namespace {
     {
         assert(probCutBeta < VALUE_INFINITE);
 
+#ifndef FAIRY_STOCKFISH
         MovePicker mp(pos, ttMove, probCutBeta - ss->staticEval, &captureHistory);
+#else
+        MovePicker mp(pos, ttMove, probCutBeta - ss->staticEval, &thisThread->gateHistory, &captureHistory);
+#endif
         int probCutCount = 0;
         bool ttPv = ss->ttPv;
         ss->ttPv = false;
@@ -872,7 +1116,11 @@ namespace {
                 ss->currentMove = move;
                 ss->continuationHistory = &thisThread->continuationHistory[ss->inCheck]
                                                                           [captureOrPromotion]
+#ifndef FAIRY_STOCKFISH
                                                                           [pos.moved_piece(move)]
+#else
+                                                                          [history_slot(pos.moved_piece(move))]
+#endif
                                                                           [to_sq(move)];
 
                 pos.do_move(move, st);
@@ -933,6 +1181,9 @@ moves_loop: // When in check, search starts from here
     Move countermove = thisThread->counterMoves[pos.piece_on(prevSq)][prevSq];
 
     MovePicker mp(pos, ttMove, depth, &thisThread->mainHistory,
+#ifdef FAIRY_STOCKFISH
+                                      &thisThread->gateHistory,
+#endif
                                       &thisThread->lowPlyHistory,
                                       &captureHistory,
                                       contHist,
@@ -974,9 +1225,17 @@ moves_loop: // When in check, search starts from here
 
       ss->moveCount = ++moveCount;
 
+#ifndef FAIRY_STOCKFISH
       if (rootNode && thisThread == Threads.main() && Time.elapsed() > 3000)
+#else
+      if (rootNode && thisThread == Threads.main() && Time.elapsed() > 3000 && is_uci_dialect(CurrentProtocol))
+#endif
           sync_cout << "info depth " << depth
+#ifndef FAIRY_STOCKFISH
                     << " currmove " << UCI::move(move, pos.is_chess960())
+#else
+                    << " currmove " << UCI::move(pos, move)
+#endif
                     << " currmovenumber " << moveCount + thisThread->pvIdx << sync_endl;
       if (PvNode)
           (ss+1)->pv = nullptr;
@@ -991,14 +1250,28 @@ moves_loop: // When in check, search starts from here
 
       // Step 13. Pruning at shallow depth (~200 Elo)
       if (  !rootNode
+#ifndef FAIRY_STOCKFISH
           && pos.non_pawn_material(us)
+#else
+          && (pos.non_pawn_material(us) || pos.count<ALL_PIECES>(us) == pos.count<PAWN>(us))
+#endif
           && bestValue > VALUE_TB_LOSS_IN_MAX_PLY)
       {
           // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold
+#ifndef FAIRY_STOCKFISH
           moveCountPruning = moveCount >= futility_move_count(improving, depth);
+#else
+          moveCountPruning = moveCount >= futility_move_count(improving, depth, pos);
+#endif
 
           // Reduced depth of the next LMR search
           int lmrDepth = std::max(newDepth - reduction(improving, depth, moveCount), 0);
+#ifdef FAIRY_STOCKFISH
+
+          if (pos.must_capture() && pos.attackers_to(to_sq(move), ~us))
+          {}
+          else
+#endif
 
           if (   captureOrPromotion
               || givesCheck)
@@ -1010,29 +1283,51 @@ moves_loop: // When in check, search starts from here
                   continue;
 
               // SEE based pruning
+#ifndef FAIRY_STOCKFISH
               if (!pos.see_ge(move, Value(-218) * depth)) // (~25 Elo)
+#else
+              if (!pos.see_ge(move, Value(-218 - 120 * pos.captures_to_hand()) * depth)) // (~25 Elo)
+#endif
                   continue;
           }
           else
           {
               // Continuation history based pruning (~20 Elo)
               if (   lmrDepth < 5
+#ifndef FAIRY_STOCKFISH
                   && (*contHist[0])[movedPiece][to_sq(move)] < CounterMovePruneThreshold
                   && (*contHist[1])[movedPiece][to_sq(move)] < CounterMovePruneThreshold)
+#else
+                  && (*contHist[0])[history_slot(movedPiece)][to_sq(move)] < CounterMovePruneThreshold
+                  && (*contHist[1])[history_slot(movedPiece)][to_sq(move)] < CounterMovePruneThreshold)
+#endif
                   continue;
 
               // Futility pruning: parent node (~5 Elo)
               if (   lmrDepth < 7
                   && !ss->inCheck
+#ifndef FAIRY_STOCKFISH
                   && ss->staticEval + 174 + 157 * lmrDepth <= alpha
                   &&  (*contHist[0])[movedPiece][to_sq(move)]
                     + (*contHist[1])[movedPiece][to_sq(move)]
                     + (*contHist[3])[movedPiece][to_sq(move)]
                     + (*contHist[5])[movedPiece][to_sq(move)] / 3 < 28255)
+#else
+                  && !pos.extinction_single_piece()
+                  && ss->staticEval + (174 + 157 * lmrDepth) * (1 + pos.check_counting()) <= alpha
+                  &&  (*contHist[0])[history_slot(movedPiece)][to_sq(move)]
+                    + (*contHist[1])[history_slot(movedPiece)][to_sq(move)]
+                    + (*contHist[3])[history_slot(movedPiece)][to_sq(move)]
+                    + (*contHist[5])[history_slot(movedPiece)][to_sq(move)] / 3 < 28255)
+#endif
                   continue;
 
               // Prune moves with negative SEE (~20 Elo)
+#ifndef FAIRY_STOCKFISH
               if (!pos.see_ge(move, Value(-(30 - std::min(lmrDepth, 18)) * lmrDepth * lmrDepth)))
+#else
+              if (!(pos.walling_rule() == DUCK) && !pos.see_ge(move, Value(-(30 - std::min(lmrDepth, 18) + 10 * !!pos.flag_region(pos.side_to_move())) * lmrDepth * lmrDepth)))
+#endif
                   continue;
           }
       }
@@ -1045,7 +1340,11 @@ moves_loop: // When in check, search starts from here
       // a reduced search on all the other moves but the ttMove and if the
       // result is lower than ttValue minus a margin, then we will extend the ttMove.
       if (   !rootNode
+#ifndef FAIRY_STOCKFISH
           &&  depth >= 7
+#else
+          &&  depth >= 7 - 2 * (pos.count<KING>() == 1)
+#endif
           &&  move == ttMove
           && !excludedMove // Avoid recursive singular search
        /* &&  ttValue != VALUE_NONE Already implicit in the next condition */
@@ -1100,18 +1399,32 @@ moves_loop: // When in check, search starts from here
                && abs(ss->staticEval) > Value(100))
           extension = 1;
 
+#ifdef FAIRY_STOCKFISH
+      // Losing chess capture extension
+      else if (    pos.must_capture()
+               &&  pos.capture(move)
+               &&  (ss->inCheck || MoveList<CAPTURES>(pos).size() == 1))
+          extension = 1;
+
+#endif
       // Add extension to new depth
       newDepth += extension;
       ss->doubleExtensions = (ss-1)->doubleExtensions + (extension == 2);
 
       // Speculative prefetch as early as possible
+#ifndef FAIRY_STOCKFISH
       prefetch(TT.first_entry(pos.key_after(move)));
 
+#endif
       // Update the current move (this must be done after singular extension search)
       ss->currentMove = move;
       ss->continuationHistory = &thisThread->continuationHistory[ss->inCheck]
                                                                 [captureOrPromotion]
+#ifndef FAIRY_STOCKFISH
                                                                 [movedPiece]
+#else
+                                                                [history_slot(movedPiece)]
+#endif
                                                                 [to_sq(move)];
 
       // Step 15. Make the move
@@ -1123,6 +1436,9 @@ moves_loop: // When in check, search starts from here
       // cases where we extend a son if it has good chances to be "interesting".
       if (    depth >= 3
           &&  moveCount > 1 + 2 * rootNode
+#ifdef FAIRY_STOCKFISH
+          && !(pos.must_capture() && pos.has_capture())
+#endif
           && (  !captureOrPromotion
               || (cutNode && (ss-1)->moveCount > 1)
               || !ss->ttPv)
@@ -1167,14 +1483,25 @@ moves_loop: // When in check, search starts from here
                   r++;
 
               ss->statScore =  thisThread->mainHistory[us][from_to(move)]
+#ifndef FAIRY_STOCKFISH
                              + (*contHist[0])[movedPiece][to_sq(move)]
                              + (*contHist[1])[movedPiece][to_sq(move)]
                              + (*contHist[3])[movedPiece][to_sq(move)]
+#else
+                             + thisThread->gateHistory[us][gating_square(move)] * 2
+                             + (*contHist[0])[history_slot(movedPiece)][to_sq(move)]
+                             + (*contHist[1])[history_slot(movedPiece)][to_sq(move)]
+                             + (*contHist[3])[history_slot(movedPiece)][to_sq(move)]
+#endif
                              - 4923;
 
               // Decrease/increase reduction for moves with a good/bad history (~30 Elo)
               if (!ss->inCheck)
+#ifndef FAIRY_STOCKFISH
                   r -= ss->statScore / 14721;
+#else
+                  r -= ss->statScore / (14721 - 4434 * pos.captures_to_hand());
+#endif
           }
 
           // In general we want to cap the LMR depth search at newDepth. But if
@@ -1311,8 +1638,13 @@ moves_loop: // When in check, search starts from here
 
     if (!moveCount)
         bestValue = excludedMove ? alpha :
+#ifndef FAIRY_STOCKFISH
                     ss->inCheck  ? mated_in(ss->ply)
                                  : VALUE_DRAW;
+#else
+                    ss->inCheck  ? pos.checkmate_value(ss->ply)
+                                 : pos.stalemate_value(ss->ply);
+#endif
 
     // If there is a move which produces search value greater than alpha we update stats of searched moves
     else if (bestMove)
@@ -1385,10 +1717,20 @@ moves_loop: // When in check, search starts from here
     ss->inCheck = pos.checkers();
     moveCount = 0;
 
+#ifndef FAIRY_STOCKFISH
     // Check for an immediate draw or maximum ply reached
     if (   pos.is_draw(ss->ply)
         || ss->ply >= MAX_PLY)
         return (ss->ply >= MAX_PLY && !ss->inCheck) ? evaluate(pos) : VALUE_DRAW;
+#else
+    Value gameResult;
+    if (pos.is_game_end(gameResult, ss->ply))
+        return gameResult;
+
+    // Check for maximum ply reached
+    if (ss->ply >= MAX_PLY)
+        return !ss->inCheck ? evaluate(pos) : VALUE_DRAW;
+#endif
 
     assert(0 <= ss->ply && ss->ply < MAX_PLY);
 
@@ -1464,6 +1806,9 @@ moves_loop: // When in check, search starts from here
     // queen promotions, and other checks (only if depth >= DEPTH_QS_CHECKS)
     // will be generated.
     MovePicker mp(pos, ttMove, depth, &thisThread->mainHistory,
+#ifdef FAIRY_STOCKFISH
+                                      &thisThread->gateHistory,
+#endif
                                       &thisThread->captureHistory,
                                       contHist,
                                       to_sq((ss-1)->currentMove));
@@ -1481,6 +1826,11 @@ moves_loop: // When in check, search starts from here
       // Futility pruning and moveCount pruning
       if (    bestValue > VALUE_TB_LOSS_IN_MAX_PLY
           && !givesCheck
+#ifdef FAIRY_STOCKFISH
+          && !(   pos.extinction_value() == -VALUE_MATE
+               && pos.piece_on(to_sq(move))
+               && (pos.extinction_piece_types() & type_of(pos.piece_on(to_sq(move)))))
+#endif
           &&  futilityBase > -VALUE_KNOWN_WIN
           &&  type_of(move) != PROMOTION)
       {
@@ -1521,14 +1871,23 @@ moves_loop: // When in check, search starts from here
       ss->currentMove = move;
       ss->continuationHistory = &thisThread->continuationHistory[ss->inCheck]
                                                                 [captureOrPromotion]
+#ifndef FAIRY_STOCKFISH
                                                                 [pos.moved_piece(move)]
+#else
+                                                                [history_slot(pos.moved_piece(move))]
+#endif
                                                                 [to_sq(move)];
 
       // Continuation history based pruning
       if (  !captureOrPromotion
           && bestValue > VALUE_TB_LOSS_IN_MAX_PLY
+#ifndef FAIRY_STOCKFISH
           && (*contHist[0])[pos.moved_piece(move)][to_sq(move)] < CounterMovePruneThreshold
           && (*contHist[1])[pos.moved_piece(move)][to_sq(move)] < CounterMovePruneThreshold)
+#else
+          && (*contHist[0])[history_slot(pos.moved_piece(move))][to_sq(move)] < CounterMovePruneThreshold
+          && (*contHist[1])[history_slot(pos.moved_piece(move))][to_sq(move)] < CounterMovePruneThreshold)
+#endif
           continue;
 
       // Make and search the move
@@ -1564,7 +1923,11 @@ moves_loop: // When in check, search starts from here
     {
         assert(!MoveList<LEGAL>(pos).size());
 
+#ifndef FAIRY_STOCKFISH
         return mated_in(ss->ply); // Plies to mate from the root
+#else
+        return pos.checkmate_value(ss->ply); // Plies to mate from the root
+#endif
     }
 
     // Save gathered info in transposition table
@@ -1657,13 +2020,28 @@ moves_loop: // When in check, search starts from here
         // Decrease stats for all non-best quiet moves
         for (int i = 0; i < quietCount; ++i)
         {
-            thisThread->mainHistory[us][from_to(quietsSearched[i])] << -bonus2;
+#ifdef FAIRY_STOCKFISH
+            if (!(pos.walling() && from_to(quietsSearched[i]) == from_to(bestMove)))
+#endif
+                thisThread->mainHistory[us][from_to(quietsSearched[i])] << -bonus2;
+#ifdef FAIRY_STOCKFISH
+            if (pos.walling())
+                thisThread->gateHistory[us][gating_square(quietsSearched[i])] << -bonus2;
+#endif
             update_continuation_histories(ss, pos.moved_piece(quietsSearched[i]), to_sq(quietsSearched[i]), -bonus2);
         }
     }
     else
+#ifdef FAIRY_STOCKFISH
+    {
+#endif
         // Increase stats for the best move in case it was a capture move
         captureHistory[moved_piece][to_sq(bestMove)][captured] << bonus1;
+#ifdef FAIRY_STOCKFISH
+        if (pos.walling())
+            thisThread->gateHistory[us][gating_square(bestMove)] << bonus1;
+    }
+#endif
 
     // Extra penalty for a quiet early move that was not a TT move or
     // main killer move in previous ply when it gets refuted.
@@ -1676,7 +2054,14 @@ moves_loop: // When in check, search starts from here
     {
         moved_piece = pos.moved_piece(capturesSearched[i]);
         captured = type_of(pos.piece_on(to_sq(capturesSearched[i])));
-        captureHistory[moved_piece][to_sq(capturesSearched[i])][captured] << -bonus1;
+#ifdef FAIRY_STOCKFISH
+        if (!(pos.walling() && from_to(capturesSearched[i]) == from_to(bestMove)))
+#endif
+            captureHistory[moved_piece][to_sq(capturesSearched[i])][captured] << -bonus1;
+#ifdef FAIRY_STOCKFISH
+        if (pos.walling())
+            thisThread->gateHistory[us][gating_square(capturesSearched[i])] << -bonus1;
+#endif
     }
   }
 
@@ -1692,7 +2077,11 @@ moves_loop: // When in check, search starts from here
         if (ss->inCheck && i > 2)
             break;
         if (is_ok((ss-i)->currentMove))
+#ifndef FAIRY_STOCKFISH
             (*(ss-i)->continuationHistory)[pc][to] << bonus;
+#else
+            (*(ss-i)->continuationHistory)[history_slot(pc)][to] << bonus;
+#endif
     }
   }
 
@@ -1711,10 +2100,18 @@ moves_loop: // When in check, search starts from here
     Color us = pos.side_to_move();
     Thread* thisThread = pos.this_thread();
     thisThread->mainHistory[us][from_to(move)] << bonus;
+#ifdef FAIRY_STOCKFISH
+    if (pos.walling())
+        thisThread->gateHistory[us][gating_square(move)] << bonus;
+#endif
     update_continuation_histories(ss, pos.moved_piece(move), to_sq(move), bonus);
 
     // Penalty for reversed move in case of moved piece not being a pawn
+#ifndef FAIRY_STOCKFISH
     if (type_of(pos.moved_piece(move)) != PAWN)
+#else
+    if (type_of(pos.moved_piece(move)) != PAWN && type_of(move) != DROP)
+#endif
         thisThread->mainHistory[us][from_to(reverse_move(move))] << -bonus;
 
     // Update countermove history
@@ -1791,6 +2188,13 @@ void MainThread::check_time() {
   if (ponder)
       return;
 
+#ifdef FAIRY_STOCKFISH
+  if (   rootPos.two_boards()
+      && Time.elapsed() < Limits.time[rootPos.side_to_move()] - 1000
+      && (Partner.sitRequested || (Partner.weDead && !Partner.partnerDead) || Partner.weVirtualWin))
+      return;
+
+#endif
   if (   (Limits.use_time_management() && (elapsed > Time.maximum() - 10 || stopOnPonderhit))
       || (Limits.movetime && elapsed >= Limits.movetime)
       || (Limits.nodes && Threads.nodes_searched() >= (uint64_t)Limits.nodes))
@@ -1830,6 +2234,25 @@ string UCI::pv(const Position& pos, Depth depth, Value alpha, Value beta) {
       if (ss.rdbuf()->in_avail()) // Not at first line
           ss << "\n";
 
+#ifdef FAIRY_STOCKFISH
+      if (CurrentProtocol == XBOARD)
+      {
+          ss << d << " "
+             << UCI::value(v) << " "
+             << elapsed / 10 << " "
+             << nodesSearched << " "
+             << rootMoves[i].selDepth << " "
+             << nodesSearched * 1000 / elapsed << " "
+             << tbHits << "\t";
+
+          // Do not print PVs with virtual drops in bughouse variants
+          if (!pos.two_boards())
+              for (Move m : rootMoves[i].pv)
+                  ss << " " << UCI::move(pos, m);
+      }
+      else
+      {
+#endif
       ss << "info"
          << " depth "    << d
          << " seldepth " << rootMoves[i].selDepth
@@ -1853,7 +2276,12 @@ string UCI::pv(const Position& pos, Depth depth, Value alpha, Value beta) {
          << " pv";
 
       for (Move m : rootMoves[i].pv)
+#ifndef FAIRY_STOCKFISH
           ss << " " << UCI::move(m, pos.is_chess960());
+#else
+          ss << " " << UCI::move(pos, m);
+      }
+#endif
   }
 
   return ss.str();

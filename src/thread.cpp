@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,11 +20,17 @@
 
 #include <algorithm> // For std::count
 #include "movegen.h"
+#ifdef FAIRY_STOCKFISH
+#include "partner.h"
+#endif
 #include "search.h"
 #include "thread.h"
 #include "uci.h"
 #include "syzygy/tbprobe.h"
 #include "tt.h"
+#ifdef FAIRY_STOCKFISH
+#include "xboard.h"
+#endif
 
 namespace Stockfish {
 
@@ -59,6 +65,9 @@ void Thread::clear() {
 
   counterMoves.fill(MOVE_NONE);
   mainHistory.fill(0);
+#ifdef FAIRY_STOCKFISH
+  gateHistory.fill(0);
+#endif
   lowPlyHistory.fill(0);
   captureHistory.fill(0);
 
@@ -111,6 +120,14 @@ void Thread::idle_loop() {
       std::unique_lock<std::mutex> lk(mutex);
       searching = false;
       cv.notify_one(); // Wake up anyone waiting for search finished
+#ifdef FAIRY_STOCKFISH
+      // Start ponder search from separate thread to prevent deadlock
+      if (Threads.size() && this == Threads.main() && XBoard::stateMachine && XBoard::stateMachine->ponderMove)
+      {
+          NativeThread t(&XBoard::StateMachine::ponder, XBoard::stateMachine);
+          t.detach();
+      }
+#endif
       cv.wait(lk, [&]{ return searching; });
 
       if (exit)
@@ -174,17 +191,45 @@ void ThreadPool::start_thinking(Position& pos, StateListPtr& states,
 
   main()->wait_for_search_finished();
 
+#ifndef FAIRY_STOCKFISH
   main()->stopOnPonderhit = stop = false;
+#else
+  main()->stopOnPonderhit = stop = abort = false;
+#endif
   increaseDepth = true;
   main()->ponder = ponderMode;
   Search::Limits = limits;
   Search::RootMoves rootMoves;
 
   for (const auto& m : MoveList<LEGAL>(pos))
-      if (   limits.searchmoves.empty()
+#ifndef FAIRY_STOCKFISH
+if (   limits.searchmoves.empty()
           || std::count(limits.searchmoves.begin(), limits.searchmoves.end(), m))
+#else
+      if (   (limits.searchmoves.empty() || std::count(limits.searchmoves.begin(), limits.searchmoves.end(), m))
+          && (limits.banmoves.empty() || !std::count(limits.banmoves.begin(), limits.banmoves.end(), m)))
+#endif
           rootMoves.emplace_back(m);
 
+#ifdef FAIRY_STOCKFISH
+  // Add virtual drops
+  if (pos.two_boards() && Partner.opptime && limits.time[pos.side_to_move()] > Partner.opptime + 1000)
+  {
+      if (pos.checkers())
+      {
+          for (const auto& m : MoveList<EVASIONS>(pos))
+              if (pos.virtual_drop(m) && pos.legal(m))
+                  rootMoves.emplace_back(m);
+      }
+      else
+      {
+          for (const auto& m : MoveList<QUIETS>(pos))
+              if (pos.virtual_drop(m) && pos.legal(m))
+                  rootMoves.emplace_back(m);
+      }
+  }
+
+#endif
   if (!rootMoves.empty())
       Tablebases::rank_root_moves(pos, rootMoves);
 
@@ -205,7 +250,11 @@ void ThreadPool::start_thinking(Position& pos, StateListPtr& states,
       th->nodes = th->tbHits = th->nmpMinPly = th->bestMoveChanges = 0;
       th->rootDepth = th->completedDepth = 0;
       th->rootMoves = rootMoves;
+#ifndef FAIRY_STOCKFISH
       th->rootPos.set(pos.fen(), pos.is_chess960(), &th->rootState, th);
+#else
+      th->rootPos.set(pos.variant(), pos.fen(), pos.is_chess960(), &th->rootState, th);
+#endif
       th->rootState = setupStates->back();
   }
 

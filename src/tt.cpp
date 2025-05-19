@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -37,7 +37,11 @@ void TTEntry::save(Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev) 
 
   // Preserve any existing move for the same position
   if (m || (uint16_t)k != key16)
+#ifndef FAIRY_STOCKFISH
       move16 = (uint16_t)m;
+#else
+      move32 = (uint32_t)m;
+#endif
 
   // Overwrite less valuable entries (cheapest checks first)
   if (b == BOUND_EXACT

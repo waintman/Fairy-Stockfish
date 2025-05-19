@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -22,6 +22,9 @@
 #include <vector>
 
 #include "position.h"
+#ifdef FAIRY_STOCKFISH
+#include "uci.h"
+#endif
 
 using namespace std;
 
@@ -110,7 +113,25 @@ namespace Stockfish {
 vector<string> setup_bench(const Position& current, istream& is) {
 
   vector<string> fens, list;
+#ifndef FAIRY_STOCKFISH
   string go, token;
+#else
+  string go, token, varname;
+
+  streampos args = is.tellg();
+  // Check whether the next token is a variant name
+  if ((is >> token) && variants.find(token) != variants.end())
+  {
+      args = is.tellg();
+      varname = token;
+  }
+  else
+  {
+      is.seekg(args);
+      varname = string(Options["UCI_Variant"]);
+  }
+  const Variant* variant = variants.find(varname)->second;
+#endif
 
   // Assign default values to missing arguments
   string ttSize    = (is >> token) ? token : "16";
@@ -123,7 +144,16 @@ vector<string> setup_bench(const Position& current, istream& is) {
   go = limitType == "eval" ? "eval" : "go " + limitType + " " + limit;
 
   if (fenFile == "default")
+#ifndef FAIRY_STOCKFISH
       fens = Defaults;
+#else
+  {
+      if (varname != "chess")
+          fens.push_back(variant->startFen);
+      else
+          fens = Defaults;
+  }
+#endif
 
   else if (fenFile == "current")
       fens.push_back(current.fen());
@@ -148,6 +178,9 @@ vector<string> setup_bench(const Position& current, istream& is) {
 
   list.emplace_back("setoption name Threads value " + threads);
   list.emplace_back("setoption name Hash value " + ttSize);
+#ifdef FAIRY_STOCKFISH
+  list.emplace_back("setoption name UCI_Variant value " + varname);
+#endif
   list.emplace_back("ucinewgame");
 
   size_t posCounter = 0;

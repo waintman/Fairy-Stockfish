@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -41,6 +41,10 @@ struct Entry {
   Phase game_phase() const { return (Phase)gamePhase; }
   bool specialized_eval_exists() const { return evaluationFunction != nullptr; }
   Value evaluate(const Position& pos) const { return (*evaluationFunction)(pos); }
+#ifdef FAIRY_STOCKFISH
+
+  int material_density() const { return materialDensity; }
+#endif
 
   // scale_factor() takes a position and a color as input and returns a scale factor
   // for the given color. We have to provide the position in addition to the color
@@ -60,6 +64,10 @@ struct Entry {
   Score score;
   int16_t gamePhase;
   uint8_t factor[COLOR_NB];
+#ifdef FAIRY_STOCKFISH
+
+  int materialDensity;
+#endif
 };
 
 typedef HashTable<Entry, 8192> Table;

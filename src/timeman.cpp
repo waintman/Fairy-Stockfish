@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -20,6 +20,9 @@
 #include <cfloat>
 #include <cmath>
 
+#ifdef FAIRY_STOCKFISH
+#include "partner.h"
+#endif
 #include "search.h"
 #include "timeman.h"
 #include "uci.h"
@@ -34,7 +37,11 @@ TimeManagement Time; // Our global time management object
 //      1) x basetime (+ z increment)
 //      2) x moves in y seconds (+ z increment)
 
+#ifndef FAIRY_STOCKFISH
 void TimeManagement::init(Search::LimitsType& limits, Color us, int ply) {
+#else
+void TimeManagement::init(const Position& pos, Search::LimitsType& limits, Color us, int ply) {
+#endif
 
   TimePoint moveOverhead    = TimePoint(Options["Move Overhead"]);
   TimePoint slowMover       = TimePoint(Options["Slow Mover"]);
@@ -68,6 +75,21 @@ void TimeManagement::init(Search::LimitsType& limits, Color us, int ply) {
   TimePoint timeLeft =  std::max(TimePoint(1),
       limits.time[us] + limits.inc[us] * (mtg - 1) - moveOverhead * (2 + mtg));
 
+#ifdef FAIRY_STOCKFISH
+  // Adjust time management for four-player variants
+  if (pos.two_boards())
+  {
+      if (Partner.partnerDead && Partner.opptime)
+          timeLeft -= Partner.opptime;
+      else
+      {
+          timeLeft = std::min(timeLeft, 5000 + std::min(std::abs(limits.time[us] - Partner.opptime), TimePoint(Partner.opptime)));
+          if (Partner.fast || Partner.partnerDead)
+              timeLeft /= 4;
+      }
+  }
+
+#endif
   // A user may scale time usage by setting UCI option "Slow Mover"
   // Default is 100 and changing this value will probably lose elo.
   timeLeft = slowMover * timeLeft / 100;

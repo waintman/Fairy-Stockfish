@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -21,14 +21,31 @@
 
 #include <map>
 #include <string>
+#ifdef FAIRY_STOCKFISH
+#include <vector>
+#endif
 
 #include "types.h"
+
+#ifdef FAIRY_STOCKFISH
+#include "variant.h"
+#endif
 
 namespace Stockfish {
 
 class Position;
 
 namespace UCI {
+
+#ifdef FAIRY_STOCKFISH
+#ifndef _WIN32
+  constexpr char SepChar = ':';
+#else
+  constexpr char SepChar = ';';
+#endif
+
+void init_variant(const Variant* v);
+#endif
 
 class Option;
 
@@ -49,20 +66,34 @@ public:
   Option(OnChange = nullptr);
   Option(bool v, OnChange = nullptr);
   Option(const char* v, OnChange = nullptr);
+#ifdef FAIRY_STOCKFISH
+  Option(const char* v, const std::vector<std::string>& variants, OnChange = nullptr);
+#endif
   Option(double v, int minv, int maxv, OnChange = nullptr);
+#ifndef FAIRY_STOCKFISH
   Option(const char* v, const char* cur, OnChange = nullptr);
+#endif
 
   Option& operator=(const std::string&);
   void operator<<(const Option&);
   operator double() const;
   operator std::string() const;
   bool operator==(const char*) const;
+#ifdef FAIRY_STOCKFISH
+  bool operator!=(const char*) const;
+  void set_combo(std::vector<std::string> newComboValues);
+  void set_default(std::string newDefault);
+  const std::string get_type() const;
+#endif
 
 private:
   friend std::ostream& operator<<(std::ostream&, const OptionsMap&);
 
   std::string defaultValue, currentValue, type;
   int min, max;
+#ifdef FAIRY_STOCKFISH
+  std::vector<std::string> comboValues;
+#endif
   size_t idx;
   OnChange on_change;
 };
@@ -70,15 +101,45 @@ private:
 void init(OptionsMap&);
 void loop(int argc, char* argv[]);
 std::string value(Value v);
+#ifndef FAIRY_STOCKFISH
 std::string square(Square s);
+#else
+std::string square(const Position& pos, Square s);
+std::string dropped_piece(const Position& pos, Move m);
+#endif
+#ifndef FAIRY_STOCKFISH
 std::string move(Move m, bool chess960);
+#else
+std::string move(const Position& pos, Move m);
+#endif
 std::string pv(const Position& pos, Depth depth, Value alpha, Value beta);
 std::string wdl(Value v, int ply);
 Move to_move(const Position& pos, std::string& str);
 
+#ifdef FAIRY_STOCKFISH
+std::string option_name(std::string name);
+bool is_valid_option(UCI::OptionsMap& options, std::string& name);
+#endif
+
 } // namespace UCI
 
 extern UCI::OptionsMap Options;
+
+#ifdef FAIRY_STOCKFISH
+enum Protocol {
+  UCI_GENERAL,
+  USI,
+  UCCI,
+  UCI_CYCLONE,
+  XBOARD,
+};
+
+constexpr bool is_uci_dialect(Protocol p) {
+  return p != XBOARD;
+}
+
+extern Protocol CurrentProtocol;
+#endif
 
 } // namespace Stockfish
 

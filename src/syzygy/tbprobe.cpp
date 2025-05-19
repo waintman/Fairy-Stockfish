@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -69,7 +69,12 @@ enum TBFlag { STM = 1, Mapped = 2, WinPlies = 4, LossPlies = 8, Wide = 16, Singl
 inline WDLScore operator-(WDLScore d) { return WDLScore(-int(d)); }
 inline Square operator^(Square s, int i) { return Square(int(s) ^ i); }
 
+#ifndef FAIRY_STOCKFISH
 const std::string PieceToChar = " PNBRQK  pnbrqk";
+#else
+const std::string PieceToChar(  " PNBRQ" + std::string(KING - QUEEN - 1, ' ') + "K" + std::string(PIECE_TYPE_NB - KING - 1, ' ')
+                              + " pnbrq" + std::string(KING - QUEEN - 1, ' ') + "k" + std::string(PIECE_TYPE_NB - KING - 1, ' '));
+#endif
 
 int MapPawns[SQUARE_NB];
 int MapB1H1H7[SQUARE_NB];
@@ -693,7 +698,11 @@ Ret do_probe_table(const Position& pos, T* entry, WDLScore wdl, ProbeState* resu
     // flip the squares before to lookup.
     bool blackStronger = (pos.material_key() != entry->key);
 
+#ifndef FAIRY_STOCKFISH
     int flipColor   = (symmetricBlackToMove || blackStronger) * 8;
+#else
+    int flipColor   = (symmetricBlackToMove || blackStronger) * PIECE_TYPE_NB;
+#endif
     int flipSquares = (symmetricBlackToMove || blackStronger) * 56;
     int stm         = (symmetricBlackToMove || blackStronger) ^ pos.side_to_move();
 
@@ -769,7 +778,7 @@ Ret do_probe_table(const Position& pos, T* entry, WDLScore wdl, ProbeState* resu
         goto encode_remaining; // With pawns we have finished special treatments
     }
 
-    // In positions withouth pawns, we further flip the squares to ensure leading
+    // In positions without pawns, we further flip the squares to ensure leading
     // piece is below RANK_5.
     if (rank_of(squares[0]) > RANK_4)
         for (int i = 0; i < size; ++i)
@@ -812,7 +821,7 @@ Ret do_probe_table(const Position& pos, T* entry, WDLScore wdl, ProbeState* resu
     // Rs "together" in 62 * 61 / 2 ways (we divide by 2 because rooks can be
     // swapped and still get the same position.)
     //
-    // In case we have at least 3 unique pieces (inlcuded kings) we encode them
+    // In case we have at least 3 unique pieces (included kings) we encode them
     // together.
     if (entry->hasUniquePieces) {
 
@@ -820,14 +829,14 @@ Ret do_probe_table(const Position& pos, T* entry, WDLScore wdl, ProbeState* resu
         int adjust2 = (squares[2] > squares[0]) + (squares[2] > squares[1]);
 
         // First piece is below a1-h8 diagonal. MapA1D1D4[] maps the b1-d1-d3
-        // triangle to 0...5. There are 63 squares for second piece and and 62
+        // triangle to 0...5. There are 63 squares for second piece and 62
         // (mapped to 0...61) for the third.
         if (off_A1H8(squares[0]))
             idx = (   MapA1D1D4[squares[0]]  * 63
                    + (squares[1] - adjust1)) * 62
                    +  squares[2] - adjust2;
 
-        // First piece is on a1-h8 diagonal, second below: map this occurence to
+        // First piece is on a1-h8 diagonal, second below: map this occurrence to
         // 6 to differentiate from the above case, rank_of() maps a1-d4 diagonal
         // to 0...3 and finally MapB1H1H7[] maps the b1-h1-h7 triangle to 0..27.
         else if (off_A1H8(squares[1]))
@@ -857,7 +866,7 @@ encode_remaining:
     idx *= d->groupIdx[0];
     Square* groupSq = squares + d->groupLen[0];
 
-    // Encode remainig pawns then pieces according to square, in ascending order
+    // Encode remaining pawns then pieces according to square, in ascending order
     bool remainingPawns = entry->hasPawns && entry->pawnCount[1];
 
     while (d->groupLen[++next])
@@ -885,7 +894,7 @@ encode_remaining:
 
 // Group together pieces that will be encoded together. The general rule is that
 // a group contains pieces of same type and color. The exception is the leading
-// group that, in case of positions withouth pawns, can be formed by 3 different
+// group that, in case of positions without pawns, can be formed by 3 different
 // pieces (default) or by the king pair when there is not a unique piece apart
 // from the kings. When there are pawns, pawns are always first in pieces[].
 //
@@ -917,7 +926,7 @@ void set_groups(T& e, PairsData* d, int order[], File f) {
     //
     // This ensures unique encoding for the whole position. The order of the
     // groups is a per-table parameter and could not follow the canonical leading
-    // pawns/pieces -> remainig pawns -> remaining pieces. In particular the
+    // pawns/pieces -> remaining pawns -> remaining pieces. In particular the
     // first group is at order[0] position and the remaining pawns, when present,
     // are at order[1] position.
     bool pp = e.hasPawns && e.pawnCount[1]; // Pawns on both sides
@@ -937,7 +946,7 @@ void set_groups(T& e, PairsData* d, int order[], File f) {
             d->groupIdx[1] = idx;
             idx *= Binomial[d->groupLen[1]][48 - d->groupLen[0]];
         }
-        else // Remainig pieces
+        else // Remaining pieces
         {
             d->groupIdx[next] = idx;
             idx *= Binomial[d->groupLen[next]][freeSquares];
@@ -947,7 +956,7 @@ void set_groups(T& e, PairsData* d, int order[], File f) {
     d->groupIdx[n] = idx;
 }
 
-// In Recursive Pairing each symbol represents a pair of childern symbols. So
+// In Recursive Pairing each symbol represents a pair of children symbols. So
 // read d->btree[] symbols data and expand each one in his left and right child
 // symbol until reaching the leafs that represent the symbol value.
 uint8_t set_symlen(PairsData* d, Sym s, std::vector<bool>& visited) {
@@ -1094,7 +1103,14 @@ void set(T& e, uint8_t* data) {
 
         for (int k = 0; k < e.pieceCount; ++k, ++data)
             for (int i = 0; i < sides; i++)
+#ifndef FAIRY_STOCKFISH
                 e.get(i, f)->pieces[k] = Piece(i ? *data >>  4 : *data & 0xF);
+#else
+            {
+                int p = i ? *data >>  4 : *data & 0xF;
+                e.get(i, f)->pieces[k] = make_piece(Color(p >> 3), PieceType(p & 7));
+            }
+#endif
 
         for (int i = 0; i < sides; ++i)
             set_groups(e, e.get(i, f), order[i], f);
@@ -1267,6 +1283,11 @@ void Tablebases::init(const std::string& paths) {
     MaxCardinality = 0;
     TBFile::Paths = paths;
 
+#ifdef LARGEBOARDS
+    // Tablebases are not working for large-board version
+    return;
+#endif
+
     if (paths.empty() || paths == "<empty>")
         return;
 
@@ -1300,7 +1321,11 @@ void Tablebases::init(const std::string& paths) {
             if (MapA1D1D4[s1] == idx && (idx || s1 == SQ_B1)) // SQ_B1 is mapped to 0
             {
                 for (Square s2 = SQ_A1; s2 <= SQ_H8; ++s2)
+#ifndef FAIRY_STOCKFISH
                     if ((PseudoAttacks[KING][s1] | s1) & s2)
+#else
+                    if ((PseudoAttacks[WHITE][KING][s1] | s1) & s2)
+#endif
                         continue; // Illegal position
 
                     else if (!off_A1H8(s1) && off_A1H8(s2) > 0)
@@ -1317,7 +1342,7 @@ void Tablebases::init(const std::string& paths) {
     for (auto p : bothOnDiagonal)
         MapKK[p.first][p.second] = code++;
 
-    // Binomial[] stores the Binomial Coefficents using Pascal rule. There
+    // Binomial[] stores the Binomial Coefficients using Pascal rule. There
     // are Binomial[k][n] ways to choose k elements from a set of n elements.
     Binomial[0][0] = 1;
 
@@ -1365,14 +1390,22 @@ void Tablebases::init(const std::string& paths) {
         }
 
     // Add entries in TB tables if the corresponding ".rtbw" file exists
+#ifndef FAIRY_STOCKFISH
     for (PieceType p1 = PAWN; p1 < KING; ++p1) {
+#else
+    for (PieceType p1 = PAWN; p1 <= QUEEN; ++p1) {
+#endif
         TBTables.add({KING, p1, KING});
 
         for (PieceType p2 = PAWN; p2 <= p1; ++p2) {
             TBTables.add({KING, p1, p2, KING});
             TBTables.add({KING, p1, KING, p2});
 
+#ifndef FAIRY_STOCKFISH
             for (PieceType p3 = PAWN; p3 < KING; ++p3)
+#else
+            for (PieceType p3 = PAWN; p3 <= QUEEN; ++p3)
+#endif
                 TBTables.add({KING, p1, p2, KING, p3});
 
             for (PieceType p3 = PAWN; p3 <= p2; ++p3) {
@@ -1384,11 +1417,19 @@ void Tablebases::init(const std::string& paths) {
                     for (PieceType p5 = PAWN; p5 <= p4; ++p5)
                         TBTables.add({KING, p1, p2, p3, p4, p5, KING});
 
+#ifndef FAIRY_STOCKFISH
                     for (PieceType p5 = PAWN; p5 < KING; ++p5)
+#else
+                    for (PieceType p5 = PAWN; p5 <= QUEEN; ++p5)
+#endif
                         TBTables.add({KING, p1, p2, p3, p4, KING, p5});
                 }
 
-                for (PieceType p4 = PAWN; p4 < KING; ++p4) {
+#ifndef FAIRY_STOCKFISH
+               for (PieceType p4 = PAWN; p4 < KING; ++p4) {
+#else
+                for (PieceType p4 = PAWN; p4 <= QUEEN; ++p4) {
+#endif
                     TBTables.add({KING, p1, p2, p3, KING, p4});
 
                     for (PieceType p5 = PAWN; p5 <= p4; ++p5)

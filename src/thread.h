@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -71,6 +71,9 @@ public:
   Depth rootDepth, completedDepth;
   CounterMoveHistory counterMoves;
   ButterflyHistory mainHistory;
+#ifdef FAIRY_STOCKFISH
+  GateHistory gateHistory;
+#endif
   LowPlyHistory lowPlyHistory;
   CapturePieceToHistory captureHistory;
   ContinuationHistory continuationHistory[2][2];
@@ -93,6 +96,9 @@ struct MainThread : public Thread {
   int callsCnt;
   bool stopOnPonderhit;
   std::atomic_bool ponder;
+#ifdef FAIRY_STOCKFISH
+  Thread* bestThread; // to fetch best move when in XBoard mode
+#endif
 };
 
 
@@ -114,10 +120,18 @@ struct ThreadPool : public std::vector<Thread*> {
   void wait_for_search_finished() const;
 
   std::atomic_bool stop, increaseDepth;
+#ifdef FAIRY_STOCKFISH
+  std::atomic_bool abort, sit;
+#endif
 
+#ifndef FAIRY_STOCKFISH
 private:
+#endif
   StateListPtr setupStates;
 
+#ifdef FAIRY_STOCKFISH
+private:
+#endif
   uint64_t accumulate(std::atomic<uint64_t> Thread::* member) const {
 
     uint64_t sum = 0;

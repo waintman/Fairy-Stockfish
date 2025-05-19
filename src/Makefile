@@ -1,5 +1,5 @@
 # Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-# Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+# Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 #
 # Stockfish is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -18,12 +18,16 @@
 ### ==========================================================================
 ### Section 1. General Configuration
 ### ==========================================================================
-
+fairy = yes
 ### Executable name
 ifeq ($(COMP),mingw)
 EXE = stockfish.exe
 else
 EXE = stockfish
+endif
+
+ifneq ($(fairy),no)
+EXE = fairy-stockfish
 endif
 
 ### Installation dir definitions
@@ -43,6 +47,10 @@ SRCS = benchmark.cpp bitbase.cpp bitboard.cpp endgame.cpp evaluate.cpp main.cpp 
 	search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp tune.cpp syzygy/tbprobe.cpp \
 	nnue/evaluate_nnue.cpp nnue/features/half_ka_v2.cpp
 
+ifeq ($(fairy),yes)
+	SRCS += partner.cpp parser.cpp piece.cpp variant.cpp xboard.cpp \
+	        nnue/features/half_ka_v2_variants.cpp
+endif
 OBJS = $(notdir $(SRCS:.cpp=.o))
 
 VPATH = syzygy:nnue:nnue/features
@@ -92,9 +100,14 @@ endif
 
 
 ### 2.1. General and architecture defaults
+largeboards = yes
+all = no
+precomputedmagics = yes
+nnue = yes
+load_net = $(if $(filter $(nnue),yes),net)
 
 ifeq ($(ARCH),)
-   ARCH = x86-64-modern
+   ARCH = apple-silicon
    help_skip_sanity = yes
 endif
 # explicitly check for the list of supported architectures (as listed with make help),
@@ -108,6 +121,7 @@ ifeq ($(ARCH), $(filter $(ARCH), \
 else
    SUPPORTED_ARCH=false
 endif
+
 
 optimize = yes
 debug = no
@@ -310,6 +324,11 @@ endif
 
 endif
 
+# Disable precomputed magics when 64-bit PEXT is available
+ifeq ($(pext),yes)
+	precomputedmagics = no
+endif
+
 ### ==========================================================================
 ### Section 3. Low-level Configuration
 ### ==========================================================================
@@ -319,6 +338,31 @@ CXXFLAGS += -Wall -Wcast-qual -fno-exceptions -std=c++17 $(EXTRACXXFLAGS)
 DEPENDFLAGS += -std=c++17
 LDFLAGS += $(EXTRALDFLAGS)
 
+# Ignore warning due to missing profile information from unused NNUE features
+CXXFLAGS += -Wno-profile-instr-out-of-date
+
+ifeq ($(fairy),yes)
+	CXXFLAGS += -DFAIRY_STOCKFISH
+endif
+# Compile version with support for large board variants
+# Use precomputed magics by default if pext is not available
+ifneq ($(largeboards),no)
+	CXXFLAGS += -DLARGEBOARDS
+	ifeq ($(precomputedmagics),yes)
+		CXXFLAGS += -DPRECOMPUTED_MAGICS
+	endif
+endif
+
+# Embed and enable NNUE
+ifeq ($(nnue),no)
+	CXXFLAGS += -DNNUE_EMBEDDING_OFF
+endif
+
+# Enable all variants, even heavyweight ones like duck and amazons
+ifneq ($(all),no)
+	CXXFLAGS += -DALLVARS
+endif
+
 ifeq ($(COMP),)
 	COMP=gcc
 endif
@@ -326,7 +370,10 @@ endif
 ifeq ($(COMP),gcc)
 	comp=gcc
 	CXX=g++
-	CXXFLAGS += -pedantic -Wextra -Wshadow
+	CXXFLAGS += -Wextra -Wshadow
+	ifeq ($(largeboards),no)
+		CXXFLAGS += -pedantic
+	endif
 
 	ifeq ($(arch),$(filter $(arch),armv7 armv8))
 		ifeq ($(OS),Android)
@@ -487,7 +534,7 @@ endif
 ### 3.3 Optimization
 ifeq ($(optimize),yes)
 
-	CXXFLAGS += -O3
+	CXXFLAGS += -O3 -fno-strict-aliasing
 
 	ifeq ($(comp),gcc)
 		ifeq ($(OS), Android)
@@ -502,7 +549,10 @@ ifeq ($(optimize),yes)
 	endif
 
 	ifeq ($(comp),clang)
-		CXXFLAGS += -fexperimental-new-pass-manager
+		clangmajorversion = $(shell $(CXX) -dumpversion 2>/dev/null | cut -f1 -d.)
+		ifeq ($(shell expr $(clangmajorversion) \< 16),1)
+			CXXFLAGS += -fexperimental-new-pass-manager
+		endif
 	endif
 endif
 
@@ -534,7 +584,7 @@ endif
 ifeq ($(avx2),yes)
 	CXXFLAGS += -DUSE_AVX2
 	ifeq ($(comp),$(filter $(comp),gcc clang mingw))
-		CXXFLAGS += -mavx2
+		CXXFLAGS += -mavx2 -mbmi
 	endif
 endif
 
@@ -729,6 +779,20 @@ ifeq ($(SUPPORTED_ARCH)$(help_skip_sanity), true)
 else
 	@echo "Specify a supported architecture with the ARCH option for more details"
 	@echo ""
+	@echo "-------------------------------"
+	@echo "Embed and enable NNUE by default: "
+	@echo ""
+	@echo "make build ARCH=x86-64 nnue=yes"
+	@echo ""
+	@echo "-------------------------------"
+	@echo "Version for large boards: "
+	@echo ""
+	@echo "make build ARCH=x86-64 COMP=gcc largeboards=yes"
+	@echo ""
+	@echo "Include all variants (adds Game of the Amazons): "
+	@echo ""
+	@echo "make build ARCH=x86-64 largeboards=yes all=yes"
+	@echo ""
 endif
 
 
@@ -736,10 +800,10 @@ endif
         config-sanity icc-profile-use icc-profile-make gcc-profile-use gcc-profile-make \
         clang-profile-use clang-profile-make
 
-build: net config-sanity
+build: $(load_net) config-sanity
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) all
 
-profile-build: net config-sanity objclean profileclean
+profile-build: $(load_net) config-sanity objclean profileclean
 	@echo ""
 	@echo "Step 1/4. Building instrumented executable ..."
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make)
@@ -770,25 +834,35 @@ clean: objclean profileclean
 net:
 	$(eval nnuenet := $(shell grep EvalFileDefaultName evaluate.h | grep define | sed 's/.*\(nn-[a-z0-9]\{12\}.nnue\).*/\1/'))
 	@echo "Default net: $(nnuenet)"
-	$(eval nnuedownloadurl := https://tests.stockfishchess.org/api/nn/$(nnuenet))
+	$(eval nnuedownloadurl1 := https://tests.stockfishchess.org/api/nn/$(nnuenet))
+	$(eval nnuedownloadurl2 := https://github.com/official-stockfish/networks/raw/master/$(nnuenet))
 	$(eval curl_or_wget := $(shell if hash curl 2>/dev/null; then echo "curl -skL"; elif hash wget 2>/dev/null; then echo "wget -qO-"; fi))
-	@if test -f "$(nnuenet)"; then \
-            echo "Already available."; \
-         else \
-            if [ "x$(curl_or_wget)" = "x" ]; then \
-               echo "Automatic download failed: neither curl nor wget is installed. Install one of these tools or download the net manually"; exit 1; \
-            else \
-               echo "Downloading $(nnuedownloadurl)"; $(curl_or_wget) $(nnuedownloadurl) > $(nnuenet);\
-            fi; \
-        fi;
+	@if [ "x$(curl_or_wget)" = "x" ]; then \
+	    echo "Automatic download failed: neither curl nor wget is installed. Install one of these tools or download the net manually"; exit 1; \
+        fi
 	$(eval shasum_command := $(shell if hash shasum 2>/dev/null; then echo "shasum -a 256 "; elif hash sha256sum 2>/dev/null; then echo "sha256sum "; fi))
-	@if [ "x$(shasum_command)" != "x" ]; then \
-	    if [ "$(nnuenet)" != "nn-"`$(shasum_command) $(nnuenet) | cut -c1-12`".nnue" ]; then \
-                echo "Failed download or $(nnuenet) corrupted, please delete!"; exit 1; \
-            fi \
-         else \
+	@if [ "x$(shasum_command)" = "x" ]; then \
             echo "shasum / sha256sum not found, skipping net validation"; \
         fi
+	@for nnuedownloadurl in "$(nnuedownloadurl1)" "$(nnuedownloadurl2)"; do \
+	   if test -f "$(nnuenet)"; then \
+	      echo "$(nnuenet) available."; \
+	   else \
+	      if [ "x$(curl_or_wget)" != "x" ]; then \
+	         echo "Downloading $${nnuedownloadurl}"; $(curl_or_wget) $${nnuedownloadurl} > $(nnuenet);\
+	      fi; \
+	   fi; \
+	   if [ "x$(shasum_command)" != "x" ]; then \
+	      if [ "$(nnuenet)" != "nn-"`$(shasum_command) $(nnuenet) | cut -c1-12`".nnue" ]; then \
+	         echo "Removing failed download"; rm -f $(nnuenet); \
+	      else \
+	         echo "Network validated"; break; \
+	      fi; \
+	   fi; \
+	done
+	@if ! test -f "$(nnuenet)"; then \
+	    echo "Failed to download $(nnuenet)."; \
+	fi
 
 # clean binaries and objects
 objclean:
@@ -812,7 +886,7 @@ default:
 
 all: $(EXE) .depend
 
-config-sanity: net
+config-sanity: $(load_net)
 	@echo ""
 	@echo "Config:"
 	@echo "debug: '$(debug)'"
@@ -835,6 +909,12 @@ config-sanity: net
 	@echo "vnni256: '$(vnni256)'"
 	@echo "vnni512: '$(vnni512)'"
 	@echo "neon: '$(neon)'"
+	@echo ""
+	@echo "Fairy-Stockfish specific:"
+	@echo "largeboards: '$(largeboards)'"
+	@echo "all: '$(all)'"
+	@echo "precomputedmagics: '$(precomputedmagics)'"
+	@echo "nnue: '$(nnue)'"
 	@echo ""
 	@echo "Flags:"
 	@echo "CXX: $(CXX)"

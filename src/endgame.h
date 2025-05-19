@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -46,6 +46,30 @@ enum EndgameCode {
   KQKP,  // KQ vs KP
   KQKR,  // KQ vs KR
 
+  // Fairy piece endgames
+  KFsPsK, // KFsPsK vs K
+  KNSK,  // KNS vs K
+  KNFK,  // KNF vs K
+  KNSFKR,  // KNSFKR vs K
+  KSFK,  // KSF vs K
+  KSFKF,  // KSF vs KF
+  KRKS,  // KR vs KS
+  KCKR,  // KC vs KR
+  KAKR,  // KA vs KR
+#ifdef FAIRY_STOCKFISH
+
+  // Special
+  KXKX,
+  RK,
+  KN,
+  NN,
+  KQK,
+  KRK,
+  KBK,
+  KNK,
+  KK,
+#endif
+
   SCALING_FUNCTIONS,
   KBPsK,   // KB and pawns vs K
   KQKRPs,  // KQ vs KR and pawns
@@ -63,7 +87,11 @@ enum EndgameCode {
 /// Endgame functions can be of two types depending on whether they return a
 /// Value or a ScaleFactor.
 
+#ifndef FAIRY_STOCKFISH
 template<EndgameCode E> using
+#else
+template<EndgameCode E, EndgameEval V = EG_EVAL_CHESS> using
+#endif
 eg_type = typename std::conditional<(E < SCALING_FUNCTIONS), Value, ScaleFactor>::type;
 
 
@@ -80,7 +108,11 @@ struct EndgameBase {
 };
 
 
+#ifndef FAIRY_STOCKFISH
 template<EndgameCode E, typename T = eg_type<E>>
+#else
+template<EndgameCode E, EndgameEval V = EG_EVAL_CHESS, typename T = eg_type<E, V>>
+#endif
 struct Endgame : public EndgameBase<T> {
 
   explicit Endgame(Color c) : EndgameBase<T>(c) {}
@@ -106,12 +138,21 @@ namespace Endgames {
     return std::get<std::is_same<T, ScaleFactor>::value>(maps);
   }
 
+#ifndef FAIRY_STOCKFISH
   template<EndgameCode E, typename T = eg_type<E>>
+#else
+  template<EndgameCode E, EndgameEval V = EG_EVAL_CHESS, typename T = eg_type<E, V>>
+#endif
   void add(const std::string& code) {
 
     StateInfo st;
+#ifndef FAIRY_STOCKFISH
     map<T>()[Position().set(code, WHITE, &st).material_key()] = Ptr<T>(new Endgame<E>(WHITE));
     map<T>()[Position().set(code, BLACK, &st).material_key()] = Ptr<T>(new Endgame<E>(BLACK));
+#else
+    map<T>()[Position().set(code, WHITE, &st).material_key(V)] = Ptr<T>(new Endgame<E, V>(WHITE));
+    map<T>()[Position().set(code, BLACK, &st).material_key(V)] = Ptr<T>(new Endgame<E, V>(BLACK));
+#endif
   }
 
   template<typename T>

@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -28,16 +28,31 @@
 #include "tt.h"
 #include "uci.h"
 
+#ifdef FAIRY_STOCKFISH
+#include "piece.h"
+#include "variant.h"
+#include "xboard.h"
+
+#endif
+
 using namespace Stockfish;
 
 int main(int argc, char* argv[]) {
 
   std::cout << engine_info() << std::endl;
 
+#ifdef FAIRY_STOCKFISH
+  pieceMap.init();
+  variants.init();
+#endif
   CommandLine::init(argc, argv);
   UCI::init(Options);
   Tune::init();
+#ifndef FAIRY_STOCKFISH
   PSQT::init();
+#else
+  PSQT::init(variants.find(Options["UCI_Variant"])->second);
+#endif
   Bitboards::init();
   Position::init();
   Bitbases::init();
@@ -49,5 +64,10 @@ int main(int argc, char* argv[]) {
   UCI::loop(argc, argv);
 
   Threads.set(0);
+#ifdef FAIRY_STOCKFISH
+  variants.clear_all();
+  pieceMap.clear_all();
+  delete XBoard::stateMachine;
+#endif
   return 0;
 }

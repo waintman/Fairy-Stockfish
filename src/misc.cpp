@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -67,7 +67,11 @@ namespace {
 
 /// Version number. If Version is left empty, then compile date in the format
 /// DD-MM-YY and show in engine_info.
+#ifndef FAIRY_STOCKFISH
 const string Version = "14";
+#else
+const string Version = "";
+#endif
 
 /// Our fancy logging facility. The trick here is to replace cin.rdbuf() and
 /// cout.rdbuf() with two Tie objects that tie cin and cout to a file stream. We
@@ -140,13 +144,21 @@ public:
 /// the program was compiled) or "Stockfish <Version>", depending on whether
 /// Version is empty.
 
+#ifndef FAIRY_STOCKFISH
 string engine_info(bool to_uci) {
+#else
+string engine_info(bool to_uci, bool to_xboard) {
+#endif
 
   const string months("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec");
   string month, day, year;
   stringstream ss, date(__DATE__); // From compiler, format is "Sep 21 2008"
 
+#ifndef FAIRY_STOCKFISH
   ss << "Stockfish " << Version << setfill('0');
+#else
+  ss << "Fairy-Stockfish " << Version << setfill('0');
+#endif
 
   if (Version.empty())
   {
@@ -154,8 +166,19 @@ string engine_info(bool to_uci) {
       ss << setw(2) << day << setw(2) << (1 + months.find(month) / 4) << year.substr(2);
   }
 
-  ss << (to_uci  ? "\nid author ": " by ")
-     << "the Stockfish developers (see AUTHORS file)";
+#ifdef LARGEBOARDS
+  ss << " LB";
+#endif
+
+#ifdef FAIRY_STOCKFISH
+  if (!to_xboard)
+#endif
+    ss << (to_uci  ? "\nid author ": " by ")
+#ifndef FAIRY_STOCKFISH
+       << "the Stockfish developers (see AUTHORS file)";
+#else
+       << "Fabian Fichter";
+#endif
 
   return ss.str();
 }
@@ -356,7 +379,11 @@ void* std_aligned_alloc(size_t alignment, size_t size) {
 #elif defined(_WIN32)
   return _mm_malloc(size, alignment);
 #else
+#ifndef FAIRY_STOCKFISH
   return std::aligned_alloc(alignment, size);
+#else
+  return aligned_alloc(alignment, size);
+#endif
 #endif
 }
 

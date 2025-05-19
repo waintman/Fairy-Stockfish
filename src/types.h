@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2021 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -47,6 +47,10 @@
 #pragma warning(disable: 4127) // Conditional expression is constant
 #pragma warning(disable: 4146) // Unary minus operator applied to unsigned type
 #pragma warning(disable: 4800) // Forcing value to bool 'true' or 'false'
+#ifdef FAIRY_STOCKFISH
+#pragma comment(linker, "/STACK:8000000") // Use 8 MB stack size for MSVC
+#pragma comment(lib, "advapi32.lib") // Fix linker error
+#endif
 #endif
 
 /// Predefined macros hell:
@@ -78,7 +82,15 @@
 
 #if defined(USE_PEXT)
 #  include <immintrin.h> // Header for _pext_u64() intrinsic
+#ifndef FAIRY_STOCKFISH
 #  define pext(b, m) _pext_u64(b, m)
+#else
+#  ifdef LARGEBOARDS
+#    define pext(b, m) (_pext_u64(b, m) ^ (_pext_u64(b >> 64, m >> 64) << popcount((m << 64) >> 64)))
+#  else
+#    define pext(b, m) _pext_u64(b, m)
+#  endif
+#endif
 #else
 #  define pext(b, m) 0
 #endif
@@ -104,10 +116,146 @@ constexpr bool Is64Bit = false;
 #endif
 
 typedef uint64_t Key;
+#ifndef FAIRY_STOCKFISH
 typedef uint64_t Bitboard;
 
 constexpr int MAX_MOVES = 256;
 constexpr int MAX_PLY   = 246;
+#else
+#ifdef LARGEBOARDS
+#if defined(__GNUC__) && defined(IS_64BIT)
+typedef unsigned __int128 Bitboard;
+#else
+struct Bitboard {
+    uint64_t b64[2];
+
+    constexpr Bitboard() : b64 {0, 0} {}
+    constexpr Bitboard(uint64_t i) : b64 {0, i} {}
+    constexpr Bitboard(uint64_t hi, uint64_t lo) : b64 {hi, lo} {};
+
+    constexpr operator bool() const {
+        return b64[0] || b64[1];
+    }
+
+    constexpr operator long long unsigned () const {
+        return b64[1];
+    }
+
+    constexpr operator unsigned() const {
+        return b64[1];
+    }
+
+    constexpr Bitboard operator << (const unsigned int bits) const {
+        return Bitboard(  bits >= 64 ? b64[1] << (bits - 64)
+                        : bits == 0  ? b64[0]
+                        : ((b64[0] << bits) | (b64[1] >> (64 - bits))),
+                        bits >= 64 ? 0 : b64[1] << bits);
+    }
+
+    constexpr Bitboard operator >> (const unsigned int bits) const {
+        return Bitboard(bits >= 64 ? 0 : b64[0] >> bits,
+                          bits >= 64 ? b64[0] >> (bits - 64)
+                        : bits == 0  ? b64[1]
+                        : ((b64[1] >> bits) | (b64[0] << (64 - bits))));
+    }
+
+    constexpr Bitboard operator << (const int bits) const {
+        return *this << unsigned(bits);
+    }
+
+    constexpr Bitboard operator >> (const int bits) const {
+        return *this >> unsigned(bits);
+    }
+
+    constexpr bool operator == (const Bitboard y) const {
+        return (b64[0] == y.b64[0]) && (b64[1] == y.b64[1]);
+    }
+
+    constexpr bool operator != (const Bitboard y) const {
+        return !(*this == y);
+    }
+
+    inline Bitboard& operator |=(const Bitboard x) {
+        b64[0] |= x.b64[0];
+        b64[1] |= x.b64[1];
+        return *this;
+    }
+    inline Bitboard& operator &=(const Bitboard x) {
+        b64[0] &= x.b64[0];
+        b64[1] &= x.b64[1];
+        return *this;
+    }
+    inline Bitboard& operator ^=(const Bitboard x) {
+        b64[0] ^= x.b64[0];
+        b64[1] ^= x.b64[1];
+        return *this;
+    }
+
+    constexpr Bitboard operator ~ () const {
+        return Bitboard(~b64[0], ~b64[1]);
+    }
+
+    constexpr Bitboard operator - () const {
+        return Bitboard(-b64[0] - (b64[1] > 0), -b64[1]);
+    }
+
+    constexpr Bitboard operator | (const Bitboard x) const {
+        return Bitboard(b64[0] | x.b64[0], b64[1] | x.b64[1]);
+    }
+
+    constexpr Bitboard operator & (const Bitboard x) const {
+        return Bitboard(b64[0] & x.b64[0], b64[1] & x.b64[1]);
+    }
+
+    constexpr Bitboard operator ^ (const Bitboard x) const {
+        return Bitboard(b64[0] ^ x.b64[0], b64[1] ^ x.b64[1]);
+    }
+
+    constexpr Bitboard operator - (const Bitboard x) const {
+        return Bitboard(b64[0] - x.b64[0] - (b64[1] < x.b64[1]), b64[1] - x.b64[1]);
+    }
+
+    constexpr Bitboard operator - (const int x) const {
+        return *this - Bitboard(x);
+    }
+
+    inline Bitboard operator * (const Bitboard x) const {
+        uint64_t a_lo = (uint32_t)b64[1];
+        uint64_t a_hi = b64[1] >> 32;
+        uint64_t b_lo = (uint32_t)x.b64[1];
+        uint64_t b_hi = x.b64[1] >> 32;
+
+        uint64_t t1 = (a_hi * b_lo) + ((a_lo * b_lo) >> 32);
+        uint64_t t2 = (a_lo * b_hi) + (t1 & 0xFFFFFFFF);
+
+        return Bitboard(b64[0] * x.b64[1] + b64[1] * x.b64[0] + (a_hi * b_hi) + (t1 >> 32) + (t2 >> 32),
+                        (t2 << 32) + (a_lo * b_lo & 0xFFFFFFFF));
+   }
+};
+#endif
+constexpr int SQUARE_BITS = 7;
+#else
+typedef uint64_t Bitboard;
+constexpr int SQUARE_BITS = 6;
+#endif
+
+//When defined, move list will be stored in heap. Delete this if you want to use stack to store move list. Using stack can cause overflow (Segmentation Fault) when the search is too deep.
+#define USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
+
+#ifdef ALLVARS
+constexpr int MAX_MOVES = 8192;
+#ifdef USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
+constexpr int MAX_PLY = 246;
+#else
+constexpr int MAX_PLY = 60;
+#endif
+/// endif USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
+#else
+constexpr int MAX_MOVES = 1024;
+constexpr int MAX_PLY = 246;
+#endif
+#endif
+/// endif ALLVARS
 
 /// A move needs 16 bits to be stored
 ///
@@ -123,15 +271,38 @@ constexpr int MAX_PLY   = 246;
 
 enum Move : int {
   MOVE_NONE,
+#ifndef FAIRY_STOCKFISH
   MOVE_NULL = 65
+#else
+  MOVE_NULL = 1 + (1 << SQUARE_BITS)
+#endif
 };
 
+#ifndef FAIRY_STOCKFISH
 enum MoveType {
+#else
+enum MoveType : int {
+#endif
   NORMAL,
+#ifndef FAIRY_STOCKFISH
   PROMOTION = 1 << 14,
   EN_PASSANT = 2 << 14,
   CASTLING  = 3 << 14
 };
+#else
+  EN_PASSANT          = 1 << (2 * SQUARE_BITS),
+  CASTLING           = 2 << (2 * SQUARE_BITS),
+  PROMOTION          = 3 << (2 * SQUARE_BITS),
+  DROP               = 4 << (2 * SQUARE_BITS),
+  PIECE_PROMOTION    = 5 << (2 * SQUARE_BITS),
+  PIECE_DEMOTION     = 6 << (2 * SQUARE_BITS),
+  SPECIAL            = 7 << (2 * SQUARE_BITS),
+};
+#endif
+
+#ifdef FAIRY_STOCKFISH
+constexpr int MOVE_TYPE_BITS = 4;
+#endif
 
 enum Color {
   WHITE, BLACK, COLOR_NB = 2
@@ -152,6 +323,40 @@ enum CastlingRights {
 
   CASTLING_RIGHT_NB = 16
 };
+#ifdef FAIRY_STOCKFISH
+
+enum CheckCount : int {
+  CHECKS_0 = 0, CHECKS_NB = 11
+};
+
+enum MaterialCounting {
+  NO_MATERIAL_COUNTING, JANGGI_MATERIAL, UNWEIGHTED_MATERIAL, WHITE_DRAW_ODDS, BLACK_DRAW_ODDS
+};
+
+enum CountingRule {
+  NO_COUNTING, MAKRUK_COUNTING, CAMBODIAN_COUNTING, ASEAN_COUNTING
+};
+
+enum ChasingRule {
+  NO_CHASING, AXF_CHASING
+};
+
+enum EnclosingRule {
+  NO_ENCLOSING, REVERSI, ATAXX, QUADWRANGLE, SNORT, ANYSIDE, TOP
+};
+
+enum WallingRule {
+  NO_WALLING, ARROW, DUCK, EDGE, PAST, STATIC
+};
+
+enum EndgameEval {
+  NO_EG_EVAL, EG_EVAL_CHESS, EG_EVAL_ANTI, EG_EVAL_ATOMIC, EG_EVAL_DUCK, EG_EVAL_MISERE, EG_EVAL_RK, EG_EVAL_NB
+};
+
+enum OptBool {
+  NO_VALUE, VALUE_FALSE, VALUE_TRUE
+};
+#endif
 
 enum Phase {
   PHASE_ENDGAME,
@@ -178,6 +383,11 @@ enum Value : int {
   VALUE_DRAW      = 0,
   VALUE_KNOWN_WIN = 10000,
   VALUE_MATE      = 32000,
+#ifdef FAIRY_STOCKFISH
+  XBOARD_VALUE_MATE = 200000,
+  VALUE_VIRTUAL_MATE = 3000,
+  VALUE_VIRTUAL_MATE_IN_MAX_PLY = VALUE_VIRTUAL_MATE - MAX_PLY,
+#endif
   VALUE_INFINITE  = 32001,
   VALUE_NONE      = 32002,
 
@@ -191,29 +401,146 @@ enum Value : int {
   BishopValueMg = 825,   BishopValueEg = 915,
   RookValueMg   = 1276,  RookValueEg   = 1380,
   QueenValueMg  = 2538,  QueenValueEg  = 2682,
+#ifdef FAIRY_STOCKFISH
+  FersValueMg              = 420,   FersValueEg              = 450,
+  AlfilValueMg             = 350,   AlfilValueEg             = 330,
+  FersAlfilValueMg         = 700,   FersAlfilValueEg         = 650,
+  SilverValueMg            = 660,   SilverValueEg            = 640,
+  AiwokValueMg             = 2300,  AiwokValueEg             = 2700,
+  BersValueMg              = 1800,  BersValueEg              = 1900,
+  ArchbishopValueMg        = 2200,  ArchbishopValueEg        = 2200,
+  ChancellorValueMg        = 2300,  ChancellorValueEg        = 2600,
+  AmazonValueMg            = 2700,  AmazonValueEg            = 2850,
+  KnibisValueMg            = 1100,  KnibisValueEg            = 1200,
+  BiskniValueMg            = 750,   BiskniValueEg            = 700,
+  KnirooValueMg            = 1050,  KnirooValueEg            = 1250,
+  RookniValueMg            = 800,   RookniValueEg            = 950,
+  ShogiPawnValueMg         =  90,   ShogiPawnValueEg         = 100,
+  LanceValueMg             = 400,   LanceValueEg             = 240,
+  ShogiKnightValueMg       = 420,   ShogiKnightValueEg       = 290,
+  GoldValueMg              = 720,   GoldValueEg              = 700,
+  DragonHorseValueMg       = 1550,  DragonHorseValueEg       = 1550,
+  ClobberPieceValueMg      = 300,   ClobberPieceValueEg      = 300,
+  BreakthroughPieceValueMg = 300,   BreakthroughPieceValueEg = 300,
+  ImmobilePieceValueMg     = 50,    ImmobilePieceValueEg     = 50,
+  CannonPieceValueMg       = 800,   CannonPieceValueEg       = 700,
+  JanggiCannonPieceValueMg = 800,   JanggiCannonPieceValueEg = 600,
+  SoldierValueMg           = 200,   SoldierValueEg           = 270,
+  HorseValueMg             = 520,   HorseValueEg             = 800,
+  ElephantValueMg          = 300,   ElephantValueEg          = 300,
+  JanggiElephantValueMg    = 340,   JanggiElephantValueEg    = 350,
+  BannerValueMg            = 3400,  BannerValueEg            = 3500,
+  WazirValueMg             = 400,   WazirValueEg             = 350,
+  CommonerValueMg          = 700,   CommonerValueEg          = 900,
+  CentaurValueMg           = 1800,  CentaurValueEg           = 1900,
+#endif
 
   MidgameLimit  = 15258, EndgameLimit  = 3915
 };
+#ifdef FAIRY_STOCKFISH
+
+constexpr int PIECE_TYPE_BITS = 6; // PIECE_TYPE_NB = pow(2, PIECE_TYPE_BITS)
+#endif
 
 enum PieceType {
+#ifndef FAIRY_STOCKFISH
   NO_PIECE_TYPE, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, KING,
+#else
+  NO_PIECE_TYPE, PAWN, KNIGHT, BISHOP, ROOK, QUEEN,
+  FERS, MET = FERS, ALFIL, FERS_ALFIL, SILVER, KHON = SILVER, AIWOK, BERS, DRAGON = BERS,
+  ARCHBISHOP, CHANCELLOR, AMAZON, KNIBIS, BISKNI, KNIROO, ROOKNI,
+  SHOGI_PAWN, LANCE, SHOGI_KNIGHT, GOLD, DRAGON_HORSE,
+  CLOBBER_PIECE, BREAKTHROUGH_PIECE, IMMOBILE_PIECE, CANNON, JANGGI_CANNON,
+  SOLDIER, HORSE, ELEPHANT, JANGGI_ELEPHANT, BANNER,
+  WAZIR, COMMONER, CENTAUR,
+
+  CUSTOM_PIECE_1, CUSTOM_PIECE_2, CUSTOM_PIECE_3, CUSTOM_PIECE_4,
+  CUSTOM_PIECE_5, CUSTOM_PIECE_6, CUSTOM_PIECE_7, CUSTOM_PIECE_8,
+
+  PIECE_TYPE_NB = 1 << PIECE_TYPE_BITS,
+  KING = PIECE_TYPE_NB - 1,
+
+  // Aliases
+  CUSTOM_PIECES = CUSTOM_PIECE_1,
+  CUSTOM_PIECES_END = KING - 1,
+  CUSTOM_PIECES_ROYAL = CUSTOM_PIECES_END,
+  CUSTOM_PIECES_NB = CUSTOM_PIECES_END - CUSTOM_PIECES + 1,
+  FAIRY_PIECES = QUEEN + 1,
+  FAIRY_PIECES_END = CUSTOM_PIECES - 1,
+#endif
   ALL_PIECES = 0,
+#ifndef FAIRY_STOCKFISH
   PIECE_TYPE_NB = 8
+#endif
 };
+#ifdef FAIRY_STOCKFISH
+static_assert(KING < PIECE_TYPE_NB, "KING exceeds PIECE_TYPE_NB.");
+static_assert(PIECE_TYPE_BITS <= 6, "PIECE_TYPE uses more than 6 bit");
+static_assert(!(PIECE_TYPE_NB & (PIECE_TYPE_NB - 1)), "PIECE_TYPE_NB is not a power of 2");
+
+static_assert(2 * SQUARE_BITS + MOVE_TYPE_BITS + 2 * PIECE_TYPE_BITS <= 32, "Move encoding uses more than 32 bits");
+#endif
 
 enum Piece {
+#ifndef FAIRY_STOCKFISH
   NO_PIECE,
   W_PAWN = PAWN,     W_KNIGHT, W_BISHOP, W_ROOK, W_QUEEN, W_KING,
   B_PAWN = PAWN + 8, B_KNIGHT, B_BISHOP, B_ROOK, B_QUEEN, B_KING,
   PIECE_NB = 16
+#else
+  NO_PIECE,
+  W_PAWN = PAWN,                 W_KNIGHT, W_BISHOP, W_ROOK, W_QUEEN, W_KING = KING,
+  B_PAWN = PAWN + PIECE_TYPE_NB, B_KNIGHT, B_BISHOP, B_ROOK, B_QUEEN, B_KING = KING + PIECE_TYPE_NB,
+  PIECE_NB = 2 * PIECE_TYPE_NB
+#endif
 };
 
+#ifndef FAIRY_STOCKFISH
 constexpr Value PieceValue[PHASE_NB][PIECE_NB] = {
   { VALUE_ZERO, PawnValueMg, KnightValueMg, BishopValueMg, RookValueMg, QueenValueMg, VALUE_ZERO, VALUE_ZERO,
     VALUE_ZERO, PawnValueMg, KnightValueMg, BishopValueMg, RookValueMg, QueenValueMg, VALUE_ZERO, VALUE_ZERO },
   { VALUE_ZERO, PawnValueEg, KnightValueEg, BishopValueEg, RookValueEg, QueenValueEg, VALUE_ZERO, VALUE_ZERO,
     VALUE_ZERO, PawnValueEg, KnightValueEg, BishopValueEg, RookValueEg, QueenValueEg, VALUE_ZERO, VALUE_ZERO }
 };
+#else
+
+enum PieceSet : uint64_t {
+  NO_PIECE_SET = 0,
+  CHESS_PIECES = (1ULL << PAWN) | (1ULL << KNIGHT) | (1ULL << BISHOP) | (1ULL << ROOK) | (1ULL << QUEEN) | (1ULL << KING),
+  COMMON_FAIRY_PIECES = (1ULL << IMMOBILE_PIECE) | (1ULL << COMMONER) | (1ULL << ARCHBISHOP) | (1ULL << CHANCELLOR),
+  SHOGI_PIECES = (1ULL << SHOGI_PAWN) | (1ULL << GOLD) | (1ULL << SILVER) | (1ULL << SHOGI_KNIGHT) | (1ULL << LANCE)
+                | (1ULL << DRAGON)| (1ULL << DRAGON_HORSE) | (1ULL << KING),
+  COMMON_STEP_PIECES = (1ULL << COMMONER) | (1ULL << FERS) | (1ULL << WAZIR) | (1ULL << BREAKTHROUGH_PIECE),
+};
+
+enum RiderType : int {
+  NO_RIDER = 0,
+  RIDER_BISHOP = 1 << 0,
+  RIDER_ROOK_H = 1 << 1,
+  RIDER_ROOK_V = 1 << 2,
+  RIDER_CANNON_H = 1 << 3,
+  RIDER_CANNON_V = 1 << 4,
+  RIDER_LAME_DABBABA = 1 << 5,
+  RIDER_HORSE = 1 << 6,
+  RIDER_ELEPHANT = 1 << 7,
+  RIDER_JANGGI_ELEPHANT = 1 << 8,
+  RIDER_CANNON_DIAG = 1 << 9,
+  RIDER_NIGHTRIDER = 1 << 10,
+  RIDER_GRASSHOPPER_H = 1 << 11,
+  RIDER_GRASSHOPPER_V = 1 << 12,
+  RIDER_GRASSHOPPER_D = 1 << 13,
+  HOPPING_RIDERS =  RIDER_CANNON_H | RIDER_CANNON_V | RIDER_CANNON_DIAG
+                  | RIDER_GRASSHOPPER_H | RIDER_GRASSHOPPER_V | RIDER_GRASSHOPPER_D,
+  LAME_LEAPERS = RIDER_LAME_DABBABA | RIDER_HORSE | RIDER_ELEPHANT | RIDER_JANGGI_ELEPHANT,
+  ASYMMETRICAL_RIDERS =  RIDER_HORSE | RIDER_JANGGI_ELEPHANT
+                       | RIDER_GRASSHOPPER_H | RIDER_GRASSHOPPER_V | RIDER_GRASSHOPPER_D,
+  NON_SLIDING_RIDERS = HOPPING_RIDERS | LAME_LEAPERS | RIDER_NIGHTRIDER,
+};
+
+extern Value PieceValue[PHASE_NB][PIECE_NB];
+extern Value EvalPieceValue[PHASE_NB][PIECE_NB]; // variant piece values for evaluation
+extern Value CapturePieceValue[PHASE_NB][PIECE_NB]; // variant piece values for captures/search
+#endif
 
 typedef int Depth;
 
@@ -228,6 +555,18 @@ enum : int {
 };
 
 enum Square : int {
+#ifdef LARGEBOARDS
+  SQ_A1, SQ_B1, SQ_C1, SQ_D1, SQ_E1, SQ_F1, SQ_G1, SQ_H1, SQ_I1, SQ_J1, SQ_K1, SQ_L1,
+  SQ_A2, SQ_B2, SQ_C2, SQ_D2, SQ_E2, SQ_F2, SQ_G2, SQ_H2, SQ_I2, SQ_J2, SQ_K2, SQ_L2,
+  SQ_A3, SQ_B3, SQ_C3, SQ_D3, SQ_E3, SQ_F3, SQ_G3, SQ_H3, SQ_I3, SQ_J3, SQ_K3, SQ_L3,
+  SQ_A4, SQ_B4, SQ_C4, SQ_D4, SQ_E4, SQ_F4, SQ_G4, SQ_H4, SQ_I4, SQ_J4, SQ_K4, SQ_L4,
+  SQ_A5, SQ_B5, SQ_C5, SQ_D5, SQ_E5, SQ_F5, SQ_G5, SQ_H5, SQ_I5, SQ_J5, SQ_K5, SQ_L5,
+  SQ_A6, SQ_B6, SQ_C6, SQ_D6, SQ_E6, SQ_F6, SQ_G6, SQ_H6, SQ_I6, SQ_J6, SQ_K6, SQ_L6,
+  SQ_A7, SQ_B7, SQ_C7, SQ_D7, SQ_E7, SQ_F7, SQ_G7, SQ_H7, SQ_I7, SQ_J7, SQ_K7, SQ_L7,
+  SQ_A8, SQ_B8, SQ_C8, SQ_D8, SQ_E8, SQ_F8, SQ_G8, SQ_H8, SQ_I8, SQ_J8, SQ_K8, SQ_L8,
+  SQ_A9, SQ_B9, SQ_C9, SQ_D9, SQ_E9, SQ_F9, SQ_G9, SQ_H9, SQ_I9, SQ_J9, SQ_K9, SQ_L9,
+  SQ_A10, SQ_B10, SQ_C10, SQ_D10, SQ_E10, SQ_F10, SQ_G10, SQ_H10, SQ_I10, SQ_J10, SQ_K10, SQ_L10,
+#else
   SQ_A1, SQ_B1, SQ_C1, SQ_D1, SQ_E1, SQ_F1, SQ_G1, SQ_H1,
   SQ_A2, SQ_B2, SQ_C2, SQ_D2, SQ_E2, SQ_F2, SQ_G2, SQ_H2,
   SQ_A3, SQ_B3, SQ_C3, SQ_D3, SQ_E3, SQ_F3, SQ_G3, SQ_H3,
@@ -236,14 +575,32 @@ enum Square : int {
   SQ_A6, SQ_B6, SQ_C6, SQ_D6, SQ_E6, SQ_F6, SQ_G6, SQ_H6,
   SQ_A7, SQ_B7, SQ_C7, SQ_D7, SQ_E7, SQ_F7, SQ_G7, SQ_H7,
   SQ_A8, SQ_B8, SQ_C8, SQ_D8, SQ_E8, SQ_F8, SQ_G8, SQ_H8,
+#endif
   SQ_NONE,
 
   SQUARE_ZERO = 0,
+#ifndef FAIRY_STOCKFISH
   SQUARE_NB   = 64
+#else
+#ifdef LARGEBOARDS
+  SQUARE_NB = 120,
+  SQUARE_BIT_MASK = 127,
+#else
+  SQUARE_NB = 64,
+  SQUARE_BIT_MASK = 63,
+#endif
+  SQ_MAX = SQUARE_NB - 1,
+  SQUARE_NB_CHESS = 64,
+  SQUARE_NB_SHOGI = 81,
+#endif
 };
 
 enum Direction : int {
+#ifdef LARGEBOARDS
+  NORTH =  12,
+#else
   NORTH =  8,
+#endif
   EAST  =  1,
   SOUTH = -NORTH,
   WEST  = -EAST,
@@ -255,11 +612,31 @@ enum Direction : int {
 };
 
 enum File : int {
+#ifndef FAIRY_STOCKFISH
   FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H, FILE_NB
+#else
+#ifdef LARGEBOARDS
+  FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H, FILE_I, FILE_J, FILE_K, FILE_L,
+#else
+  FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H,
+#endif
+  FILE_NB,
+  FILE_MAX = FILE_NB - 1
+#endif
 };
 
 enum Rank : int {
+#ifndef FAIRY_STOCKFISH
   RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8, RANK_NB
+#else
+#ifdef LARGEBOARDS
+  RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8, RANK_9, RANK_10,
+#else
+  RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8,
+#endif
+  RANK_NB,
+  RANK_MAX = RANK_NB - 1
+#endif
 };
 
 // Keep track of what a move changes on the board (used by NNUE)
@@ -271,11 +648,22 @@ struct DirtyPiece {
   // Max 3 pieces can change in one move. A promotion with capture moves
   // both the pawn and the captured piece to SQ_NONE and the piece promoted
   // to from SQ_NONE to the capture square.
+#ifndef FAIRY_STOCKFISH
   Piece piece[3];
+#else
+  Piece piece[12];
+  Piece handPiece[12];
+  int handCount[12];
+#endif
 
   // From and to squares, which may be SQ_NONE
+#ifndef FAIRY_STOCKFISH
   Square from[3];
   Square to[3];
+#else
+  Square from[12];
+  Square to[12];
+#endif
 };
 
 /// Score enum stores a middlegame and an endgame value in a single integer (enum).
@@ -300,6 +688,17 @@ inline Value mg_value(Score s) {
   union { uint16_t u; int16_t s; } mg = { uint16_t(unsigned(s)) };
   return Value(mg.s);
 }
+#ifdef FAIRY_STOCKFISH
+
+#define ENABLE_BIT_OPERATORS_ON(T)                                        \
+constexpr T operator~ (T d) { return (T)~(int)d; }                        \
+constexpr T operator| (T d1, T d2) { return (T)((int)d1 | (int)d2); }     \
+constexpr T operator& (T d1, T d2) { return (T)((int)d1 & (int)d2); }     \
+constexpr T operator^ (T d1, T d2) { return (T)((int)d1 ^ (int)d2); }     \
+inline T& operator|= (T& d1, T d2) { return (T&)((int&)d1 |= (int)d2); }  \
+inline T& operator&= (T& d1, T d2) { return (T&)((int&)d1 &= (int)d2); }  \
+inline T& operator^= (T& d1, T d2) { return (T&)((int&)d1 ^= (int)d2); }
+#endif
 
 #define ENABLE_BASE_OPERATORS_ON(T)                                \
 constexpr T operator+(T d1, int d2) { return T(int(d1) + d2); }    \
@@ -329,12 +728,45 @@ ENABLE_INCR_OPERATORS_ON(PieceType)
 ENABLE_INCR_OPERATORS_ON(Square)
 ENABLE_INCR_OPERATORS_ON(File)
 ENABLE_INCR_OPERATORS_ON(Rank)
+#ifdef FAIRY_STOCKFISH
+ENABLE_INCR_OPERATORS_ON(CheckCount)
+#endif
 
 ENABLE_BASE_OPERATORS_ON(Score)
+#ifdef FAIRY_STOCKFISH
+
+ENABLE_BASE_OPERATORS_ON(PieceType)
+ENABLE_BIT_OPERATORS_ON(RiderType)
+ENABLE_BASE_OPERATORS_ON(RiderType)
+#endif
 
 #undef ENABLE_FULL_OPERATORS_ON
 #undef ENABLE_INCR_OPERATORS_ON
 #undef ENABLE_BASE_OPERATORS_ON
+#ifdef FAIRY_STOCKFISH
+#undef ENABLE_BIT_OPERATORS_ON
+
+constexpr PieceSet piece_set(PieceType pt) {
+  return PieceSet(1ULL << pt);
+}
+
+constexpr PieceSet operator~ (PieceSet ps) { return (PieceSet)~(uint64_t)ps; }
+constexpr PieceSet operator| (PieceSet ps1, PieceSet ps2) { return (PieceSet)((uint64_t)ps1 | (uint64_t)ps2); }
+constexpr PieceSet operator| (PieceSet ps, PieceType pt) { return ps | piece_set(pt); }
+constexpr PieceSet operator& (PieceSet ps1, PieceSet ps2) { return (PieceSet)((uint64_t)ps1 & (uint64_t)ps2); }
+constexpr PieceSet operator& (PieceSet ps, PieceType pt) { return ps & piece_set(pt); }
+constexpr PieceSet operator^ (PieceSet ps1, PieceSet ps2) { return (PieceSet)((uint64_t)ps1 ^ (uint64_t)ps2); }
+constexpr PieceSet operator^ (PieceSet ps, PieceType pt) { return ps ^ piece_set(pt); }
+inline PieceSet& operator|= (PieceSet& ps1, PieceSet ps2) { return (PieceSet&)((uint64_t&)ps1 |= (uint64_t)ps2); }
+inline PieceSet& operator|= (PieceSet& ps, PieceType pt) { return ps |= piece_set(pt); }
+inline PieceSet& operator&= (PieceSet& ps1, PieceSet ps2) { return (PieceSet&)((uint64_t&)ps1 &= (uint64_t)ps2); }
+//inline PieceSet& operator&= (PieceSet& ps, PieceType pt) does not make sense
+inline PieceSet& operator^= (PieceSet& ps1, PieceSet ps2) { return (PieceSet&)((uint64_t&)ps1 ^= (uint64_t)ps2); }
+inline PieceSet& operator^= (PieceSet& ps, PieceType pt) { return ps ^= piece_set(pt); }
+
+static_assert(piece_set(PAWN) & PAWN);
+static_assert(piece_set(KING) & KING);
+#endif
 
 /// Additional operators to add a Direction to a Square
 constexpr Square operator+(Square s, Direction d) { return Square(int(s) + int(d)); }
@@ -372,16 +804,32 @@ constexpr Color operator~(Color c) {
   return Color(c ^ BLACK); // Toggle color
 }
 
+#ifndef FAIRY_STOCKFISH
 constexpr Square flip_rank(Square s) { // Swap A1 <-> A8
   return Square(s ^ SQ_A8);
 }
+#else
+constexpr Square flip_rank(Square s, Rank maxRank = RANK_8) { // Swap A1 <-> A8
+  return Square(s + NORTH * (maxRank - 2 * (s / NORTH)));
+}
+#endif
 
+#ifndef FAIRY_STOCKFISH
 constexpr Square flip_file(Square s) { // Swap A1 <-> H1
   return Square(s ^ SQ_H1);
 }
+#else
+constexpr Square flip_file(Square s, File maxFile = FILE_H) { // Swap A1 <-> H1
+  return Square(s + maxFile - 2 * (s % NORTH));
+}
+#endif
 
 constexpr Piece operator~(Piece pc) {
+#ifndef FAIRY_STOCKFISH
   return Piece(pc ^ 8); // Swap color of piece B_KNIGHT <-> W_KNIGHT
+#else
+  return Piece(pc ^ PIECE_TYPE_NB);  // Swap color of piece B_KNIGHT <-> W_KNIGHT
+#endif
 }
 
 constexpr CastlingRights operator&(Color c, CastlingRights cr) {
@@ -396,35 +844,72 @@ constexpr Value mated_in(int ply) {
   return -VALUE_MATE + ply;
 }
 
+#ifdef FAIRY_STOCKFISH
+constexpr Value convert_mate_value(Value v, int ply) {
+  return  v ==  VALUE_MATE ? mate_in(ply)
+        : v == -VALUE_MATE ? mated_in(ply)
+        : v;
+}
+#endif
+
 constexpr Square make_square(File f, Rank r) {
+#ifndef FAIRY_STOCKFISH
   return Square((r << 3) + f);
+#else
+  return Square(r * FILE_NB + f);
+#endif
 }
 
 constexpr Piece make_piece(Color c, PieceType pt) {
+#ifndef FAIRY_STOCKFISH
   return Piece((c << 3) + pt);
+#else
+  return Piece((c << PIECE_TYPE_BITS) + pt);
+#endif
 }
 
 constexpr PieceType type_of(Piece pc) {
+#ifndef FAIRY_STOCKFISH
   return PieceType(pc & 7);
+#else
+  return PieceType(pc & (PIECE_TYPE_NB - 1));
+#endif
 }
 
 inline Color color_of(Piece pc) {
   assert(pc != NO_PIECE);
+#ifndef FAIRY_STOCKFISH
   return Color(pc >> 3);
+#else
+  return Color(pc >> PIECE_TYPE_BITS);
+#endif
 }
 
 constexpr bool is_ok(Square s) {
+#ifndef FAIRY_STOCKFISH
   return s >= SQ_A1 && s <= SQ_H8;
+#else
+  return s >= SQ_A1 && s <= SQ_MAX;
+#endif
 }
 
 constexpr File file_of(Square s) {
+#ifndef FAIRY_STOCKFISH
   return File(s & 7);
+#else
+  return File(s % FILE_NB);
+#endif
 }
 
 constexpr Rank rank_of(Square s) {
+#ifndef FAIRY_STOCKFISH
   return Rank(s >> 3);
+#else
+  return Rank(s / FILE_NB);
+#endif
 }
 
+#ifndef FAIRY_STOCKFISH
 constexpr Square relative_square(Color c, Square s) {
   return Square(s ^ (c * 56));
 }
@@ -436,19 +921,43 @@ constexpr Rank relative_rank(Color c, Rank r) {
 constexpr Rank relative_rank(Color c, Square s) {
   return relative_rank(c, rank_of(s));
 }
+#else
+constexpr Rank relative_rank(Color c, Rank r, Rank maxRank = RANK_8) {
+  return Rank(c == WHITE ? r : maxRank - r);
+}
+
+constexpr Rank relative_rank(Color c, Square s, Rank maxRank = RANK_8) {
+  return relative_rank(c, rank_of(s), maxRank);
+}
+
+constexpr Square relative_square(Color c, Square s, Rank maxRank = RANK_8) {
+  return make_square(file_of(s), relative_rank(c, s, maxRank));
+}
+#endif
 
 constexpr Direction pawn_push(Color c) {
   return c == WHITE ? NORTH : SOUTH;
 }
 
+#ifndef FAIRY_STOCKFISH
 constexpr Square from_sq(Move m) {
   return Square((m >> 6) & 0x3F);
 }
+#else
+constexpr MoveType type_of(Move m) {
+  return MoveType(m & (15 << (2 * SQUARE_BITS)));
+}
+#endif
 
 constexpr Square to_sq(Move m) {
+#ifndef FAIRY_STOCKFISH
   return Square(m & 0x3F);
+#else
+  return Square(m & SQUARE_BIT_MASK);
+#endif
 }
 
+#ifndef FAIRY_STOCKFISH
 constexpr int from_to(Move m) {
  return m & 0xFFF;
 }
@@ -460,23 +969,101 @@ constexpr MoveType type_of(Move m) {
 constexpr PieceType promotion_type(Move m) {
   return PieceType(((m >> 12) & 3) + KNIGHT);
 }
+#else
+constexpr Square from_sq(Move m) {
+  return type_of(m) == DROP ? SQ_NONE : Square((m >> SQUARE_BITS) & SQUARE_BIT_MASK);
+}
+
+inline int from_to(Move m) {
+ return to_sq(m) + (from_sq(m) << SQUARE_BITS);
+}
+
+inline PieceType promotion_type(Move m) {
+  return type_of(m) == PROMOTION ? PieceType((m >> (2 * SQUARE_BITS + MOVE_TYPE_BITS)) & (PIECE_TYPE_NB - 1)) : NO_PIECE_TYPE;
+}
+
+inline PieceType gating_type(Move m) {
+  return PieceType((m >> (2 * SQUARE_BITS + MOVE_TYPE_BITS)) & (PIECE_TYPE_NB - 1));
+}
+
+inline Square gating_square(Move m) {
+  return Square((m >> (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) & SQUARE_BIT_MASK);
+}
+
+inline bool is_gating(Move m) {
+  return gating_type(m) && (type_of(m) == NORMAL || type_of(m) == CASTLING);
+}
+
+inline bool is_pass(Move m) {
+  return type_of(m) == SPECIAL && from_sq(m) == to_sq(m);
+}
+#endif
 
 constexpr Move make_move(Square from, Square to) {
+#ifndef FAIRY_STOCKFISH
   return Move((from << 6) + to);
 }
+#else
+  return Move((from << SQUARE_BITS) + to);
+}
+#endif
+
+#ifdef FAIRY_STOCKFISH
+template<MoveType T>
+inline Move make(Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
+  return Move((pt << (2 * SQUARE_BITS + MOVE_TYPE_BITS)) + T + (from << SQUARE_BITS) + to);
+}
+
+constexpr Move make_drop(Square to, PieceType pt_in_hand, PieceType pt_dropped) {
+  return Move((pt_in_hand << (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) + (pt_dropped << (2 * SQUARE_BITS + MOVE_TYPE_BITS)) + DROP + to);
+}
+#endif
 
 constexpr Move reverse_move(Move m) {
   return make_move(to_sq(m), from_sq(m));
 }
 
+#ifndef FAIRY_STOCKFISH
 template<MoveType T>
 constexpr Move make(Square from, Square to, PieceType pt = KNIGHT) {
   return Move(T + ((pt - KNIGHT) << 12) + (from << 6) + to);
 }
 
+#else
+template<MoveType T>
+constexpr Move make_gating(Square from, Square to, PieceType pt, Square gate) {
+  return Move((gate << (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) + (pt << (2 * SQUARE_BITS + MOVE_TYPE_BITS)) + T + (from << SQUARE_BITS) + to);
+}
+
+constexpr PieceType dropped_piece_type(Move m) {
+  return PieceType((m >> (2 * SQUARE_BITS + MOVE_TYPE_BITS)) & (PIECE_TYPE_NB - 1));
+}
+
+constexpr PieceType in_hand_piece_type(Move m) {
+  return PieceType((m >> (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) & (PIECE_TYPE_NB - 1));
+}
+
+inline bool is_custom(PieceType pt) {
+  return pt >= CUSTOM_PIECES && pt <= CUSTOM_PIECES_END;
+}
+#endif
+
+#ifndef FAIRY_STOCKFISH
 constexpr bool is_ok(Move m) {
   return from_sq(m) != to_sq(m); // Catch MOVE_NULL and MOVE_NONE
 }
+#else
+inline bool is_ok(Move m) {
+  return from_sq(m) != to_sq(m) || type_of(m) == PROMOTION || type_of(m) == SPECIAL; // Catch MOVE_NULL and MOVE_NONE
+}
+#endif
+
+#ifdef FAIRY_STOCKFISH
+inline int dist(Direction d) {
+  return std::abs(d % NORTH) < NORTH / 2 ? std::max(std::abs(d / NORTH), int(std::abs(d % NORTH)))
+      : std::max(std::abs(d / NORTH) + 1, int(NORTH - std::abs(d % NORTH)));
+}
+#endif
 
 /// Based on a congruential pseudo random number generator
 constexpr Key make_key(uint64_t seed) {
