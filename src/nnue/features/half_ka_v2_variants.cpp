@@ -50,7 +50,7 @@ namespace Stockfish::Eval::NNUE::Features {
   void HalfKAv2Variants::append_active_indices(
     const Position& pos,
     Color perspective,
-    ValueListInserter<IndexType> active
+    IndexList& active
   ) {
     Square oriented_ksq = orient(perspective, pos.nnue_king_square(perspective), pos);
     Bitboard bb = pos.pieces(WHITE) | pos.pieces(BLACK);
@@ -76,24 +76,21 @@ namespace Stockfish::Eval::NNUE::Features {
 
   void HalfKAv2Variants::append_changed_indices(
     Square ksq,
-    StateInfo* st,
+    const DirtyPiece& dp,
     Color perspective,
-    ValueListInserter<IndexType> removed,
-    ValueListInserter<IndexType> added,
+    IndexList& removed,
+    IndexList& added,
     const Position& pos
   ) {
-    const auto& dp = st->dirtyPiece;
-    Square oriented_ksq = orient(perspective, ksq, pos);
     for (int i = 0; i < dp.dirty_num; ++i) {
-      Piece pc = dp.piece[i];
       if (dp.from[i] != SQ_NONE)
-        removed.push_back(make_index(perspective, dp.from[i], pc, oriented_ksq, pos));
+        removed.push_back(make_index(perspective, dp.from[i], dp.piece[i], ksq, pos));
       else if (dp.handPiece[i] != NO_PIECE)
-        removed.push_back(make_index(perspective, dp.handCount[i] - 1, dp.handPiece[i], oriented_ksq, pos));
+        removed.push_back(make_index(perspective, dp.handCount[i] - 1, dp.handPiece[i], ksq, pos));
       if (dp.to[i] != SQ_NONE)
-        added.push_back(make_index(perspective, dp.to[i], pc, oriented_ksq, pos));
+        added.push_back(make_index(perspective, dp.to[i], dp.piece[i], ksq, pos));
       else if (dp.handPiece[i] != NO_PIECE)
-        added.push_back(make_index(perspective, dp.handCount[i] - 1, dp.handPiece[i], oriented_ksq, pos));
+        added.push_back(make_index(perspective, dp.handCount[i] - 1, dp.handPiece[i], ksq, pos));
     }
   }
 

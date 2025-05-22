@@ -171,9 +171,9 @@ if (Type == QUIETS || Type == EVASIONS || Type == NON_EVASIONS)
     constexpr Direction UpLeft   = (Us == WHITE ? NORTH_WEST : SOUTH_EAST);
 
 #ifndef FAIRY_STOCKFISH
-    const Bitboard emptySquares = Type == QUIETS || Type == QUIET_CHECKS ? target : ~pos.pieces();
-    const Bitboard enemies      = Type == EVASIONS ? pos.checkers()
-                                : Type == CAPTURES ? target : pos.pieces(Them);
+    const Bitboard emptySquares = ~pos.pieces();
+    const Bitboard enemies      =  Type == EVASIONS ? pos.checkers()
+                                                    : pos.pieces(Them);
 
     Bitboard pawnsOn7    = pos.pieces(Us, PAWN) &  TRank7BB;
     Bitboard pawnsNotOn7 = pos.pieces(Us, PAWN) & ~TRank7BB;

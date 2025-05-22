@@ -2895,9 +2895,9 @@ void Position::do_null_move(StateInfo& newSt) {
 #endif
 
   st->key ^= Zobrist::side;
+  ++st->rule50;
   prefetch(TT.first_entry(key()));
 
-  ++st->rule50;
   st->pliesFromNull = 0;
 
   sideToMove = ~sideToMove;
@@ -3071,12 +3071,14 @@ bool Position::see_ge(Move m, Value threshold) const {
 
 #endif
 #ifndef FAIRY_STOCKFISH
+  assert(color_of(piece_on(from)) == sideToMove);
   Bitboard occupied = pieces() ^ from ^ to;
-  Color stm = color_of(piece_on(from));
+  Color stm = sideToMove;
 #else
   Bitboard occupied = (type_of(m) != DROP ? pieces() ^ from : pieces()) ^ to;
   Color stm = color_of(moved_piece(m));
 #endif
+
   Bitboard attackers = attackers_to(to, occupied);
   Bitboard stmAttackers, bb;
   int res = 1;

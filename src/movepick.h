@@ -91,16 +91,16 @@ enum StatsType { NoCaptures, Captures };
 /// ordering decisions. It uses 2 tables (one for each color) indexed by
 /// the move's from and to squares, see www.chessprogramming.org/Butterfly_Boards
 #ifndef FAIRY_STOCKFISH
-typedef Stats<int16_t, 13365, COLOR_NB, int(SQUARE_NB) * int(SQUARE_NB)> ButterflyHistory;
+typedef Stats<int16_t, 14365, COLOR_NB, int(SQUARE_NB) * int(SQUARE_NB)> ButterflyHistory;
 #else
-typedef Stats<int16_t, 13365, COLOR_NB, int(SQUARE_NB + 1) * int(1 << SQUARE_BITS)> ButterflyHistory;
+typedef Stats<int16_t, 14365, COLOR_NB, int(SQUARE_NB + 1) * int(1 << SQUARE_BITS)> ButterflyHistory;
 
-typedef Stats<int16_t, 13365, COLOR_NB, SQUARE_NB> GateHistory;
+typedef Stats<int16_t, 14365, COLOR_NB, SQUARE_NB> GateHistory;
 #endif
 
 /// At higher depths LowPlyHistory records successful quiet moves near the root
-/// and quiet moves which are/were in the PV (ttPv). It is cleared with each new
-/// search and filled during iterative deepening.
+/// and quiet moves which are/were in the PV (ttPv). LowPlyHistory is populated during
+/// iterative deepening and at each new search the data is shifted down by 2 plies
 constexpr int MAX_LPH = 4;
 #ifndef FAIRY_STOCKFISH
 typedef Stats<int16_t, 10692, MAX_LPH, int(SQUARE_NB) * int(SQUARE_NB)> LowPlyHistory;

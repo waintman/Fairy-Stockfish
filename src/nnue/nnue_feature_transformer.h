@@ -380,7 +380,6 @@ namespace Stockfish::Eval::NNUE {
       // That might depend on the feature set and generally relies on the
       // feature set's update cost calculation to be correct and never
       // allow updates with more added/removed features than MaxActiveDimensions.
-      using IndexList = ValueList<IndexType, FeatureSet::MaxActiveDimensions>;
 
   #ifdef VECTOR
       // Gcc-10.2 unnecessarily spills AVX2 registers if this array
@@ -422,20 +421,21 @@ namespace Stockfish::Eval::NNUE {
 #else
         const Square ksq = pos.nnue_king_square(perspective);
 #endif
-        IndexList removed[2], added[2];
+        FeatureSet::IndexList removed[2], added[2];
         FeatureSet::append_changed_indices(
 #ifndef FAIRY_STOCKFISH
-          ksq, next, perspective, removed[0], added[0]);
+          ksq, next->dirtyPiece, perspective, removed[0], added[0]);
 #else
-          ksq, next, perspective, removed[0], added[0], pos);
+          ksq, next->dirtyPiece, perspective, removed[0], added[0], pos);
 #endif
         for (StateInfo *st2 = pos.state(); st2 != next; st2 = st2->previous)
           FeatureSet::append_changed_indices(
 #ifndef FAIRY_STOCKFISH
-            ksq, st2, perspective, removed[1], added[1]);
+            ksq, st2->dirtyPiece, perspective, removed[1], added[1]);
 #else
-            ksq, st2, perspective, removed[1], added[1], pos);
+            ksq, st2->dirtyPiece, perspective, removed[1], added[1], pos);
 #endif
+
 
         // Mark the accumulators as computed.
         next->accumulator.computed[perspective] = true;
@@ -560,7 +560,7 @@ namespace Stockfish::Eval::NNUE {
         // Refresh the accumulator
         auto& accumulator = pos.state()->accumulator;
         accumulator.computed[perspective] = true;
-        IndexList active;
+        FeatureSet::IndexList active;
         FeatureSet::append_active_indices(pos, perspective, active);
 
   #ifdef VECTOR

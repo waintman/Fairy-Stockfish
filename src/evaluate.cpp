@@ -68,7 +68,7 @@ const Variant* currentNnueVariant;
 namespace Eval {
 
   bool useNNUE;
-  string eval_file_loaded = "None";
+  string currentEvalFileName = "None";
 
   /// NNUE::init() tries to load a NNUE network at startup time, or when the engine
   /// receives a UCI command "setoption name EvalFile value nn-[a-z0-9]{12}.nnue"
@@ -107,6 +107,8 @@ namespace Eval {
 
     currentNnueVariant = variants.find(variant)->second;
 #endif
+    if (eval_file.empty())
+        eval_file = EvalFileDefaultName;
 
     #if defined(DEFAULT_NNUE_DIRECTORY)
     #define stringify2(x) #x
@@ -117,13 +119,13 @@ namespace Eval {
     #endif
 
     for (string directory : dirs)
-        if (eval_file_loaded != eval_file)
+        if (currentEvalFileName != eval_file)
         {
             if (directory != "<internal>")
             {
                 ifstream stream(directory + eval_file, ios::binary);
                 if (load_eval(eval_file, stream))
-                    eval_file_loaded = eval_file;
+                    currentEvalFileName = eval_file;
             }
 
             if (directory == "<internal>" && eval_file == EvalFileDefaultName)
@@ -138,7 +140,7 @@ namespace Eval {
 
                 istream stream(&buffer);
                 if (load_eval(eval_file, stream))
-                    eval_file_loaded = eval_file;
+                    currentEvalFileName = eval_file;
             }
         }
   }
@@ -147,20 +149,20 @@ namespace Eval {
   void NNUE::verify() {
 
     string eval_file = string(Options["EvalFile"]);
+    if (eval_file.empty())
+        eval_file = EvalFileDefaultName;
 
 #ifndef FAIRY_STOCKFISH
-    if (useNNUE && eval_file_loaded != eval_file)
+    if (useNNUE && currentEvalFileName != eval_file)
 #else
-    if (useNNUE && eval_file.find(eval_file_loaded) == string::npos)
+    if (useNNUE && eval_file.find(currentEvalFileName) == string::npos)
 #endif
     {
-        UCI::OptionsMap defaults;
-        UCI::init(defaults);
 
         string msg1 = "If the UCI option \"Use NNUE\" is set to true, network evaluation parameters compatible with the engine must be available.";
         string msg2 = "The option is set to true, but the network file " + eval_file + " was not loaded successfully.";
         string msg3 = "The UCI option EvalFile might need to specify the full path, including the directory name, to the network file.";
-        string msg4 = "The default net can be downloaded from: https://tests.stockfishchess.org/api/nn/" + string(defaults["EvalFile"]);
+        string msg4 = "The default net can be downloaded from: https://tests.stockfishchess.org/api/nn/" + std::string(EvalFileDefaultName);
         string msg5 = "The engine will be terminated now.";
 
         sync_cout << "info string ERROR: " << msg1 << sync_endl;
@@ -180,7 +182,7 @@ namespace Eval {
 #ifndef FAIRY_STOCKFISH
         sync_cout << "info string NNUE evaluation using " << eval_file << " enabled" << sync_endl;
 #else
-            sync_cout << "info string NNUE evaluation using " << eval_file_loaded << " enabled" << sync_endl;
+            sync_cout << "info string NNUE evaluation using " << currentEvalFileName << " enabled" << sync_endl;
 #endif
         else
             sync_cout << "info string classical evaluation enabled" << sync_endl;
@@ -239,8 +241,8 @@ using namespace Trace;
 namespace {
 
   // Threshold for lazy and space evaluation
-  constexpr Value LazyThreshold1    =  Value(1565);
-  constexpr Value LazyThreshold2    =  Value(1102);
+  constexpr Value LazyThreshold1    =  Value(3130);
+  constexpr Value LazyThreshold2    =  Value(2204);
   constexpr Value SpaceThreshold    =  Value(11551);
 
   // KingAttackWeights[PieceType] contains king attack weights by piece type
@@ -1783,7 +1785,7 @@ constexpr Bitboard Camp = (Us == WHITE ? AllSquares ^ Rank6BB ^ Rank7BB ^ Rank8B
 
     // Early exit if score is high
     auto lazy_skip = [&](Value lazyThreshold) {
-        return abs(mg_value(score) + eg_value(score)) / 2 > lazyThreshold + pos.non_pawn_material() / 64;
+        return abs(mg_value(score) + eg_value(score)) > lazyThreshold + pos.non_pawn_material() / 32;
     };
 
 #ifndef FAIRY_STOCKFISH
@@ -1897,26 +1899,22 @@ make_v:
 
     if (   pos.piece_on(SQ_A1) == W_BISHOP
         && pos.piece_on(SQ_B2) == W_PAWN)
-        correction += !pos.empty(SQ_B3) ? -CorneredBishop * 4
-                                        : -CorneredBishop * 3;
+        correction -= CorneredBishop;
 
     if (   pos.piece_on(SQ_H1) == W_BISHOP
         && pos.piece_on(SQ_G2) == W_PAWN)
-        correction += !pos.empty(SQ_G3) ? -CorneredBishop * 4
-                                        : -CorneredBishop * 3;
+        correction -= CorneredBishop;
 
     if (   pos.piece_on(SQ_A8) == B_BISHOP
         && pos.piece_on(SQ_B7) == B_PAWN)
-        correction += !pos.empty(SQ_B6) ? CorneredBishop * 4
-                                        : CorneredBishop * 3;
+        correction += CorneredBishop;
 
     if (   pos.piece_on(SQ_H8) == B_BISHOP
         && pos.piece_on(SQ_G7) == B_PAWN)
-        correction += !pos.empty(SQ_G6) ? CorneredBishop * 4
-                                        : CorneredBishop * 3;
+        correction += CorneredBishop;
 
-    return pos.side_to_move() == WHITE ?  Value(correction)
-                                       : -Value(correction);
+    return pos.side_to_move() == WHITE ?  Value(5 * correction)
+                                       : -Value(5 * correction);
   }
 
 } // namespace Eval
@@ -1930,50 +1928,28 @@ Value Eval::evaluate(const Position& pos) {
   Value v;
 
 #ifndef FAIRY_STOCKFISH
-  if (!Eval::useNNUE)
+  // Deciding between classical and NNUE eval: for high PSQ imbalance we use classical,
+  // but we switch to NNUE during long shuffling or with high material on the board.
+
+  if (  !useNNUE
+      || abs(eg_value(pos.psq_score())) * 5 > (850 + pos.non_pawn_material() / 64) * (5 + pos.rule50_count()))
 #else
-  if (!Eval::useNNUE || !pos.nnue_applicable())
+  if (!useNNUE || !pos.nnue_applicable())
 #endif
-      v = Evaluation<NO_TRACE>(pos).value();
+      v = Evaluation<NO_TRACE>(pos).value();          // classical
   else
   {
-      // Scale and shift NNUE for compatibility with search and classical evaluation
-      auto  adjusted_NNUE = [&]()
-      {
-         int scale =   903
-                     + 32 * pos.count<PAWN>()
-                     + 32 * pos.non_pawn_material() / 1024;
+      int scale =   883
+                  + 32 * pos.count<PAWN>()
+                  + 32 * pos.non_pawn_material() / 1024;
 
-         Value nnue = NNUE::evaluate(pos, true) * scale / 1024;
-
-         if (pos.is_chess960())
-             nnue += fix_FRC(pos);
+       v = NNUE::evaluate(pos, true) * scale / 1024;  // NNUE
 
 #ifdef FAIRY_STOCKFISH
-         if (pos.check_counting())
-         {
-             Color us = pos.side_to_move();
-             nnue +=  6 * scale / (5 * pos.checks_remaining( us))
-                    - 6 * scale / (5 * pos.checks_remaining(~us));
-         }
-
-#endif
-         return nnue;
-      };
-
-      // If there is PSQ imbalance we use the classical eval, but we switch to
-      // NNUE eval faster when shuffling or if the material on the board is high.
-      int r50 = pos.rule50_count();
-      Value psq = Value(abs(eg_value(pos.psq_score())));
-#ifndef FAIRY_STOCKFISH
-      bool classical = psq * 5 > (750 + pos.non_pawn_material() / 64) * (5 + r50);
-#else
       bool pure = !pos.check_counting();
-      bool classical = psq * 5 > (750 + pos.non_pawn_material() / 64) * (5 + r50) && !pure;
 #endif
-
-      v = classical ? Evaluation<NO_TRACE>(pos).value()  // classical
-                    : adjusted_NNUE();                   // NNUE
+       if (pos.is_chess960())
+           v += fix_FRC(pos);
   }
 
   // Damp down the evaluation linearly when shuffling
