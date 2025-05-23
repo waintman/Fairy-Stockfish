@@ -98,16 +98,6 @@ typedef Stats<int16_t, 14365, COLOR_NB, int(SQUARE_NB + 1) * int(1 << SQUARE_BIT
 typedef Stats<int16_t, 14365, COLOR_NB, SQUARE_NB> GateHistory;
 #endif
 
-/// At higher depths LowPlyHistory records successful quiet moves near the root
-/// and quiet moves which are/were in the PV (ttPv). LowPlyHistory is populated during
-/// iterative deepening and at each new search the data is shifted down by 2 plies
-constexpr int MAX_LPH = 4;
-#ifndef FAIRY_STOCKFISH
-typedef Stats<int16_t, 10692, MAX_LPH, int(SQUARE_NB) * int(SQUARE_NB)> LowPlyHistory;
-#else
-typedef Stats<int16_t, 10692, MAX_LPH, int(SQUARE_NB + 1) * int(1 << SQUARE_BITS)> LowPlyHistory;
-#endif
-
 /// CounterMoveHistory stores counter moves indexed by [piece][to] of the previous
 /// move, see www.chessprogramming.org/Countermove_Heuristic
 typedef Stats<Move, NOT_USED, PIECE_NB, SQUARE_NB> CounterMoveHistory;
@@ -147,9 +137,18 @@ public:
   MovePicker(const MovePicker&) = delete;
   MovePicker& operator=(const MovePicker&) = delete;
 #ifndef FAIRY_STOCKFISH
-  MovePicker(const Position&, Move, Value, const CapturePieceToHistory*);
+  MovePicker(const Position&, Move, Depth, const ButterflyHistory*,
+                                           const CapturePieceToHistory*,
+                                           const PieceToHistory**,
+                                           Move,
+                                           const Move*);
 #else
-  MovePicker(const Position&, Move, Value, const GateHistory*, const CapturePieceToHistory*);
+  MovePicker(const Position&, Move, Depth, const ButterflyHistory*,
+                                           const GateHistory*,
+                                           const CapturePieceToHistory*,
+                                           const PieceToHistory**,
+                                           Move,
+                                           const Move*);
 #endif
   MovePicker(const Position&, Move, Depth, const ButterflyHistory*,
 #ifdef FAIRY_STOCKFISH
@@ -158,16 +157,11 @@ public:
                                            const CapturePieceToHistory*,
                                            const PieceToHistory**,
                                            Square);
-  MovePicker(const Position&, Move, Depth, const ButterflyHistory*,
+  MovePicker(const Position&, Move, Value, Depth,
 #ifdef FAIRY_STOCKFISH
                                            const GateHistory*,
 #endif
-                                           const LowPlyHistory*,
-                                           const CapturePieceToHistory*,
-                                           const PieceToHistory**,
-                                           Move,
-                                           const Move*,
-                                           int);
+                                          const CapturePieceToHistory*);
   Move next_move(bool skipQuiets = false);
 
 private:
@@ -181,7 +175,6 @@ private:
 #ifdef FAIRY_STOCKFISH
   const GateHistory* gateHistory;
 #endif
-  const LowPlyHistory* lowPlyHistory;
   const CapturePieceToHistory* captureHistory;
   const PieceToHistory** continuationHistory;
   Move ttMove;
@@ -190,7 +183,6 @@ private:
   Square recaptureSquare;
   Value threshold;
   Depth depth;
-  int ply;
   ExtMove moves[MAX_MOVES];
 };
 

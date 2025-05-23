@@ -68,7 +68,6 @@ void Thread::clear() {
 #ifdef FAIRY_STOCKFISH
   gateHistory.fill(0);
 #endif
-  lowPlyHistory.fill(0);
   captureHistory.fill(0);
 
   for (bool inCheck : { false, true })
@@ -76,7 +75,7 @@ void Thread::clear() {
       {
           for (auto& to : continuationHistory[inCheck][c])
                 for (auto& h : to)
-                      h->fill(0);
+                      h->fill(-71);
           continuationHistory[inCheck][c][NO_PIECE][0]->fill(Search::CounterMovePruneThreshold - 1);
       }
 }
@@ -179,6 +178,7 @@ void ThreadPool::clear() {
 
   main()->callsCnt = 0;
   main()->bestPreviousScore = VALUE_INFINITE;
+  main()->bestPreviousAverageScore = VALUE_INFINITE;
   main()->previousTimeReduction = 1.0;
 }
 

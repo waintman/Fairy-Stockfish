@@ -23,20 +23,21 @@
 #include <deque>
 #include <memory> // For std::unique_ptr
 #include <string>
+
 #ifdef FAIRY_STOCKFISH
 #include <functional>
 #endif
-
 #include "bitboard.h"
 #include "evaluate.h"
 #include "psqt.h"
 #include "types.h"
+
 #ifdef FAIRY_STOCKFISH
 #include "variant.h"
 #include "movegen.h"
 #endif
-
 #include "nnue/nnue_accumulator.h"
+
 
 namespace Stockfish {
 
@@ -312,6 +313,7 @@ public:
 #else
   Bitboard slider_blockers(Bitboard sliders, Square s, Bitboard& pinners, Color c) const;
 #endif
+  template<PieceType Pt> Bitboard attacks_by(Color c) const;
 
   // Properties of moves
   bool legal(Move m) const;
@@ -320,7 +322,7 @@ public:
   bool virtual_drop(Move m) const;
 #endif
   bool capture(Move m) const;
-  bool capture_or_promotion(Move m) const;
+
 #ifdef FAIRY_STOCKFISH
   Square capture_square(Square to) const;
 #endif
@@ -1398,6 +1400,22 @@ inline Bitboard Position::attackers_to(Square s, Bitboard occupied, Color c) con
 }
 #endif
 
+template<PieceType Pt>
+inline Bitboard Position::attacks_by(Color c) const {
+
+  if constexpr (Pt == PAWN)
+      return c == WHITE ? pawn_attacks_bb<WHITE>(pieces(WHITE, PAWN))
+                        : pawn_attacks_bb<BLACK>(pieces(BLACK, PAWN));
+  else
+  {
+      Bitboard threats = 0;
+      Bitboard attackers = pieces(c, Pt);
+      while (attackers)
+          threats |= attacks_bb<Pt>(pop_lsb(attackers), pieces());
+      return threats;
+  }
+}
+
 inline Bitboard Position::checkers() const {
   return st->checkersBB;
 }
@@ -1493,15 +1511,6 @@ inline bool Position::is_promoted(Square s) const {
 
 inline bool Position::is_chess960() const {
   return chess960;
-}
-
-inline bool Position::capture_or_promotion(Move m) const {
-  assert(is_ok(m));
-#ifndef FAIRY_STOCKFISH
-  return type_of(m) != NORMAL ? type_of(m) != CASTLING : !empty(to_sq(m));
-#else
-  return type_of(m) == PROMOTION || type_of(m) == EN_PASSANT || (type_of(m) != CASTLING && !empty(to_sq(m)));
-#endif
 }
 
 inline bool Position::capture(Move m) const {

@@ -378,11 +378,6 @@ enum Bound {
   BOUND_EXACT = BOUND_UPPER | BOUND_LOWER
 };
 
-enum ExplosionState {
-  EXPLOSION_NONE,
-  MUST_CALM_DOWN
-};
-
 enum Value : int {
   VALUE_ZERO      = 0,
   VALUE_DRAW      = 0,
@@ -1019,14 +1014,14 @@ inline Move make(Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
   return Move((pt << (2 * SQUARE_BITS + MOVE_TYPE_BITS)) + T + (from << SQUARE_BITS) + to);
 }
 
+constexpr Move reverse_move(Move m) {
+  return make_move(to_sq(m), from_sq(m));
+}
+
 constexpr Move make_drop(Square to, PieceType pt_in_hand, PieceType pt_dropped) {
   return Move((pt_in_hand << (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) + (pt_dropped << (2 * SQUARE_BITS + MOVE_TYPE_BITS)) + DROP + to);
 }
 #endif
-
-constexpr Move reverse_move(Move m) {
-  return make_move(to_sq(m), from_sq(m));
-}
 
 #ifndef FAIRY_STOCKFISH
 template<MoveType T>
