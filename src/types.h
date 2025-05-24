@@ -959,7 +959,7 @@ constexpr Square to_sq(Move m) {
 
 #ifndef FAIRY_STOCKFISH
 constexpr int from_to(Move m) {
- return m & 0xFFF;
+  return m & 0xFFF;
 }
 
 constexpr MoveType type_of(Move m) {

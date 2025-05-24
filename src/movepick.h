@@ -91,11 +91,11 @@ enum StatsType { NoCaptures, Captures };
 /// ordering decisions. It uses 2 tables (one for each color) indexed by
 /// the move's from and to squares, see www.chessprogramming.org/Butterfly_Boards
 #ifndef FAIRY_STOCKFISH
-typedef Stats<int16_t, 14365, COLOR_NB, int(SQUARE_NB) * int(SQUARE_NB)> ButterflyHistory;
+/// (~11 elo)
+typedef Stats<int16_t, 7183, COLOR_NB, int(SQUARE_NB) * int(SQUARE_NB)> ButterflyHistory;
 #else
-typedef Stats<int16_t, 14365, COLOR_NB, int(SQUARE_NB + 1) * int(1 << SQUARE_BITS)> ButterflyHistory;
-
-typedef Stats<int16_t, 14365, COLOR_NB, SQUARE_NB> GateHistory;
+typedef Stats<int16_t, 7183, COLOR_NB, int(SQUARE_NB + 1) * int(1 << SQUARE_BITS)> ButterflyHistory;
+typedef Stats<int16_t, 7183, COLOR_NB, SQUARE_NB> GateHistory;
 #endif
 
 /// CounterMoveHistory stores counter moves indexed by [piece][to] of the previous
@@ -116,6 +116,7 @@ typedef Stats<int16_t, 29952, 2 * PIECE_SLOTS, SQUARE_NB> PieceToHistory;
 /// the current one given a previous one. The nested history table is based on
 /// PieceToHistory instead of ButterflyBoards.
 #ifndef FAIRY_STOCKFISH
+/// (~63 elo)
 typedef Stats<PieceToHistory, NOT_USED, PIECE_NB, SQUARE_NB> ContinuationHistory;
 #else
 typedef Stats<PieceToHistory, NOT_USED, 2 * PIECE_SLOTS, SQUARE_NB> ContinuationHistory;
@@ -157,12 +158,15 @@ public:
                                            const CapturePieceToHistory*,
                                            const PieceToHistory**,
                                            Square);
-  MovePicker(const Position&, Move, Value, Depth,
+
+  MovePicker(const Position&, Move, Value,
 #ifdef FAIRY_STOCKFISH
                                            const GateHistory*,
 #endif
-                                          const CapturePieceToHistory*);
+                                           const CapturePieceToHistory*);
   Move next_move(bool skipQuiets = false);
+
+  Bitboard threatenedPieces;
 
 private:
   template<PickType T, typename Pred> Move select(Pred);
