@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -248,7 +248,7 @@ void init(const Variant* v) {
       Piece pc = make_piece(WHITE, pt);
 
 #endif
-      Score score = make_score(PieceValue[MG][pc], PieceValue[EG][pc]);
+    Score score = make_score(PieceValue[MG][pc], PieceValue[EG][pc]);
 
 #ifndef FAIRY_STOCKFISH
     for (Square s = SQ_A1; s <= SQ_H8; ++s)
@@ -267,7 +267,7 @@ void init(const Variant* v) {
           if (v->blastOnCapture)
               score += make_score(mg_value(score) * 3 / 2, eg_value(score));
       }
-      
+
       const PieceInfo* pi = pieceMap.find(pt)->second;
       bool isSlider = pi->slider[0][MODALITY_QUIET].size() || pi->slider[0][MODALITY_CAPTURE].size() || pi->hopper[0][MODALITY_QUIET].size() || pi->hopper[0][MODALITY_CAPTURE].size();
       bool isPawn = !isSlider && pi->steps[0][MODALITY_QUIET].size() && !std::any_of(pi->steps[0][MODALITY_QUIET].begin(), pi->steps[0][MODALITY_QUIET].end(), [](const std::pair<const Direction, int>& d) { return d.first < SOUTH / 2; });

@@ -5,6 +5,7 @@ src/.depend
 
 # Built binary
 src/stockfish*
+src/fairy-stockfish*
 src/-lstdc++.res
 
 # Neural network for the NNUE evaluation
@@ -19,6 +20,7 @@ tests/syzygy
 tests/js/node_modules
 ffish.js
 *.wasm
+*.wasm.map
 
 # pyffish
 venv

@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -52,7 +52,7 @@ void init_variant(const Variant* v);
 // the win_rate_model() such that Stockfish outputs an advantage of
 // "100 centipawns" for a position if the engine has a 50% probability to win
 // from this position in selfplay at fishtest LTC time control.
-const int NormalizeToPawnValue = 361;
+const int NormalizeToPawnValue = 328;
 
 class Option;
 
@@ -62,12 +62,12 @@ struct CaseInsensitiveLess {
 };
 
 /// The options container is defined as a std::map
-typedef std::map<std::string, Option, CaseInsensitiveLess> OptionsMap;
+using OptionsMap = std::map<std::string, Option, CaseInsensitiveLess>;
 
 /// The Option class implements each option as specified by the UCI protocol
 class Option {
 
-  typedef void (*OnChange)(const Option&);
+  using OnChange = void (*)(const Option&);
 
 public:
   Option(OnChange = nullptr);
@@ -83,7 +83,7 @@ public:
 
   Option& operator=(const std::string&);
   void operator<<(const Option&);
-  operator double() const;
+  operator int() const;
   operator std::string() const;
   bool operator==(const char*) const;
 #ifdef FAIRY_STOCKFISH

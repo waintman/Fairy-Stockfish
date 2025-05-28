@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -371,11 +371,8 @@ void Bitboards::init() {
   for (unsigned i = 0; i < (1 << 16); ++i)
       PopCnt16[i] = uint8_t(std::bitset<16>(i).count());
 
-#ifndef FAIRY_STOCKFISH
-  for (Square s = SQ_A1; s <= SQ_H8; ++s)
-      SquareBB[s] = (1ULL << s);
+#ifdef FAIRY_STOCKFISH
 
-#else
   for (Square s = SQ_A1; s <= SQ_MAX; ++s)
       SquareBB[s] = make_bitboard(s);
 
@@ -391,7 +388,7 @@ void Bitboards::init() {
   for (Square s1 = SQ_A1; s1 <= SQ_MAX; ++s1)
       for (Square s2 = SQ_A1; s2 <= SQ_MAX; ++s2)
 #endif
-              SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
+          SquareDistance[s1][s2] = std::max(distance<File>(s1, s2), distance<Rank>(s1, s2));
 
 #ifndef FAIRY_STOCKFISH
   init_magics(ROOK, RookTable, RookMagics);

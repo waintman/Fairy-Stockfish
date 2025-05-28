@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -38,9 +38,9 @@ extern Score psq[PIECE_NB][SQUARE_NB + 1];
 
 // Fill psqt array from a set of internally linked parameters
 #ifndef FAIRY_STOCKFISH
-extern void init();
+void init();
 #else
-extern void init(const Variant*);
+void init(const Variant*);
 #endif
 
 } // namespace Stockfish::PSQT

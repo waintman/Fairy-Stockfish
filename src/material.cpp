@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -209,7 +209,7 @@ Entry* probe(const Position& pos) {
   }
   else
 #endif
-      e->gamePhase = Phase(((npm - EndgameLimit) * PHASE_MIDGAME) / (MidgameLimit - EndgameLimit));
+  e->gamePhase = Phase(((npm - EndgameLimit) * PHASE_MIDGAME) / (MidgameLimit - EndgameLimit));
 
   // Let's look if we have a specialized evaluation function for this particular
   // material configuration. Firstly we look for a fixed configuration one, then
@@ -233,68 +233,69 @@ Entry* probe(const Position& pos) {
           }
 
 #endif
-      for (Color c : { WHITE, BLACK })
-          if (is_KXK(pos, c))
-          {
-              e->evaluationFunction = &EvaluateKXK[c];
-              return e;
-          }
+  for (Color c : { WHITE, BLACK })
+      if (is_KXK(pos, c))
+      {
+          e->evaluationFunction = &EvaluateKXK[c];
+          return e;
+      }
 
-      // OK, we didn't find any special evaluation function for the current material
-      // configuration. Is there a suitable specialized scaling function?
+  // OK, we didn't find any special evaluation function for the current material
+  // configuration. Is there a suitable specialized scaling function?
 #ifdef FAIRY_STOCKFISH
-      {
+  {
 #endif
-          const auto* sf = Endgames::probe<ScaleFactor>(key);
+  const auto* sf = Endgames::probe<ScaleFactor>(key);
 
-          if (sf)
-          {
-              e->scalingFunction[sf->strongSide] = sf; // Only strong color assigned
-              return e;
-          }
+  if (sf)
+  {
+      e->scalingFunction[sf->strongSide] = sf; // Only strong color assigned
+      return e;
+  }
+
 #ifdef FAIRY_STOCKFISH
-      }
+  }
 #endif
 
-      // We didn't find any specialized scaling function, so fall back on generic
-      // ones that refer to more than one material distribution. Note that in this
-      // case we don't return after setting the function.
-      for (Color c : { WHITE, BLACK })
+  // We didn't find any specialized scaling function, so fall back on generic
+  // ones that refer to more than one material distribution. Note that in this
+  // case we don't return after setting the function.
+  for (Color c : { WHITE, BLACK })
+  {
+    if (is_KBPsK(pos, c))
+        e->scalingFunction[c] = &ScaleKBPsK[c];
+
+    else if (is_KQKRPs(pos, c))
+        e->scalingFunction[c] = &ScaleKQKRPs[c];
+  }
+
+  if (npm_w + npm_b == VALUE_ZERO && pos.pieces(PAWN)) // Only pawns on the board
+  {
+      if (!pos.count<PAWN>(BLACK))
       {
-          if (is_KBPsK(pos, c))
-              e->scalingFunction[c] = &ScaleKBPsK[c];
+          assert(pos.count<PAWN>(WHITE) >= 2);
 
-          else if (is_KQKRPs(pos, c))
-              e->scalingFunction[c] = &ScaleKQKRPs[c];
+          e->scalingFunction[WHITE] = &ScaleKPsK[WHITE];
       }
-
-      if (npm_w + npm_b == VALUE_ZERO && pos.pieces(PAWN)) // Only pawns on the board
+      else if (!pos.count<PAWN>(WHITE))
       {
-          if (!pos.count<PAWN>(BLACK))
-          {
-              assert(pos.count<PAWN>(WHITE) >= 2);
+          assert(pos.count<PAWN>(BLACK) >= 2);
 
-              e->scalingFunction[WHITE] = &ScaleKPsK[WHITE];
-          }
-          else if (!pos.count<PAWN>(WHITE))
-          {
-              assert(pos.count<PAWN>(BLACK) >= 2);
-
-              e->scalingFunction[BLACK] = &ScaleKPsK[BLACK];
-          }
-          else if (pos.count<PAWN>(WHITE) == 1 && pos.count<PAWN>(BLACK) == 1)
-          {
-              // This is a special case because we set scaling functions
-              // for both colors instead of only one.
-              e->scalingFunction[WHITE] = &ScaleKPKP[WHITE];
-              e->scalingFunction[BLACK] = &ScaleKPKP[BLACK];
-          }
+          e->scalingFunction[BLACK] = &ScaleKPsK[BLACK];
       }
+      else if (pos.count<PAWN>(WHITE) == 1 && pos.count<PAWN>(BLACK) == 1)
+      {
+          // This is a special case because we set scaling functions
+          // for both colors instead of only one.
+          e->scalingFunction[WHITE] = &ScaleKPKP[WHITE];
+          e->scalingFunction[BLACK] = &ScaleKPKP[BLACK];
+      }
+  }
 
-      // Zero or just one pawn makes it difficult to win, even with a small material
-      // advantage. This catches some trivial draws like KK, KBK and KNK and gives a
-      // drawish scale factor for cases such as KRKBP and KmmKm (except for KBBKN).
-      if (!pos.count<PAWN>(WHITE) && npm_w - npm_b <= BishopValueMg)
+  // Zero or just one pawn makes it difficult to win, even with a small material
+  // advantage. This catches some trivial draws like KK, KBK and KNK and gives a
+  // drawish scale factor for cases such as KRKBP and KmmKm (except for KBBKN).
+  if (!pos.count<PAWN>(WHITE) && npm_w - npm_b <= BishopValueMg)
 #ifndef FAIRY_STOCKFISH
       e->factor[WHITE] = uint8_t(npm_w <  RookValueMg   ? SCALE_FACTOR_DRAW :
                                  npm_b <= BishopValueMg ? 4 : 14);
@@ -303,7 +304,7 @@ Entry* probe(const Position& pos) {
                                       npm_b <= BishopValueMg && pos.count<ALL_PIECES>(WHITE) <= 3 ? 4 : 14);
 #endif
 
-      if (!pos.count<PAWN>(BLACK) && npm_b - npm_w <= BishopValueMg)
+  if (!pos.count<PAWN>(BLACK) && npm_b - npm_w <= BishopValueMg)
 #ifndef FAIRY_STOCKFISH
       e->factor[BLACK] = uint8_t(npm_b <  RookValueMg   ? SCALE_FACTOR_DRAW :
                                  npm_w <= BishopValueMg ? 4 : 14);

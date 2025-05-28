@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -115,7 +115,6 @@ constexpr Bitboard KingFlank[FILE_NB] = {
 extern uint8_t PopCnt16[1 << 16];
 extern uint8_t SquareDistance[SQUARE_NB][SQUARE_NB];
 
-extern Bitboard SquareBB[SQUARE_NB];
 extern Bitboard BetweenBB[SQUARE_NB][SQUARE_NB];
 extern Bitboard LineBB[SQUARE_NB][SQUARE_NB];
 #ifndef FAIRY_STOCKFISH
@@ -194,7 +193,11 @@ constexpr Bitboard make_bitboard(Square s, Squares... squares) {
 
 inline Bitboard square_bb(Square s) {
   assert(is_ok(s));
+#ifndef FAIRY_STOCKFISH
+  return (1ULL << s);
+#else
   return SquareBB[s];
+#endif
 }
 
 
@@ -270,7 +273,7 @@ constexpr Bitboard file_bb(Square s) {
 template<Direction D>
 constexpr Bitboard shift(Bitboard b) {
 #ifndef FAIRY_STOCKFISH
-return  D == NORTH      ?  b             << 8 : D == SOUTH      ?  b             >> 8
+  return  D == NORTH      ?  b             << 8 : D == SOUTH      ?  b             >> 8
         : D == NORTH+NORTH?  b             <<16 : D == SOUTH+SOUTH?  b             >>16
         : D == EAST       ? (b & ~FileHBB) << 1 : D == WEST       ? (b & ~FileABB) >> 1
         : D == NORTH_EAST ? (b & ~FileHBB) << 9 : D == NORTH_WEST ? (b & ~FileABB) << 7

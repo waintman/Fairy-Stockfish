@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -88,17 +88,24 @@ namespace {
 #endif
 
 #ifndef FAIRY_STOCKFISH
-  template<GenType Type, Direction D>
-  ExtMove* make_promotions(ExtMove* moveList, Square to) {
+  template<GenType Type, Direction D, bool Enemy>
+  ExtMove* make_promotions(ExtMove* moveList, [[maybe_unused]] Square to) {
 #else
-  template<Color c, GenType Type, Direction D>
+  template<Color c, GenType Type, Direction D, bool Enemy>
   ExtMove* make_promotions(const Position& pos, ExtMove* moveList, Square to) {
 #endif
 
-    if (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
+    if constexpr (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
 #ifndef FAIRY_STOCKFISH
+    {
         *moveList++ = make<PROMOTION>(to - D, to, QUEEN);
-
+        if constexpr (Enemy && Type == CAPTURES)
+        {
+            *moveList++ = make<PROMOTION>(to - D, to, ROOK);
+            *moveList++ = make<PROMOTION>(to - D, to, BISHOP);
+            *moveList++ = make<PROMOTION>(to - D, to, KNIGHT);
+        }
+    }
 #else
     {
         for (PieceSet promotions = pos.promotion_piece_types(c); promotions;)
@@ -113,14 +120,13 @@ namespace {
     }
 #endif
 #ifndef FAIRY_STOCKFISH
-if (Type == QUIETS || Type == EVASIONS || Type == NON_EVASIONS)
+    if constexpr ((Type == QUIETS && !Enemy) || Type == EVASIONS || Type == NON_EVASIONS)
     {
         *moveList++ = make<PROMOTION>(to - D, to, ROOK);
         *moveList++ = make<PROMOTION>(to - D, to, BISHOP);
         *moveList++ = make<PROMOTION>(to - D, to, KNIGHT);
     }
 #endif
-
     return moveList;
   }
 
@@ -225,19 +231,19 @@ if (Type == QUIETS || Type == EVASIONS || Type == NON_EVASIONS)
 #endif
 
     // Single and double pawn pushes, no promotions
-    if (Type != CAPTURES)
+    if constexpr (Type != CAPTURES)
     {
 #ifndef FAIRY_STOCKFISH
         Bitboard b1 = shift<Up>(pawnsNotOn7)   & emptySquares;
         Bitboard b2 = shift<Up>(b1 & TRank3BB) & emptySquares;
 
-        if (Type == EVASIONS) // Consider only blocking squares
+        if constexpr (Type == EVASIONS) // Consider only blocking squares
         {
             b1 &= target;
             b2 &= target;
         }
 
-        if (Type == QUIET_CHECKS)
+        if constexpr (Type == QUIET_CHECKS)
         {
             // To make a quiet check, you either make a direct check by pushing a pawn
             // or push a blocker pawn that is not on the same file as the enemy king.
@@ -285,33 +291,33 @@ if (Type == QUIETS || Type == EVASIONS || Type == NON_EVASIONS)
         Bitboard b2 = shift<UpLeft >(pawnsOn7) & enemies;
         Bitboard b3 = shift<Up     >(pawnsOn7) & emptySquares;
 
-        if (Type == EVASIONS)
+        if constexpr (Type == EVASIONS)
             b3 &= target;
 
         while (b1)
-            moveList = make_promotions<Type, UpRight>(moveList, pop_lsb(b1));
+            moveList = make_promotions<Type, UpRight, true>(moveList, pop_lsb(b1));
 
         while (b2)
-            moveList = make_promotions<Type, UpLeft >(moveList, pop_lsb(b2));
+            moveList = make_promotions<Type, UpLeft, true>(moveList, pop_lsb(b2));
 
         while (b3)
-            moveList = make_promotions<Type, Up     >(moveList, pop_lsb(b3));
+            moveList = make_promotions<Type, Up,    false>(moveList, pop_lsb(b3));
     }
 #else
     while (brcp)
-        moveList = make_promotions<Us, Type, UpRight>(pos, moveList, pop_lsb(brcp));
+        moveList = make_promotions<Us, Type, UpRight, true>(pos, moveList, pop_lsb(brcp));
 
     while (blcp)
-        moveList = make_promotions<Us, Type, UpLeft >(pos, moveList, pop_lsb(blcp));
+        moveList = make_promotions<Us, Type, UpLeft, true>(pos, moveList, pop_lsb(blcp));
 
     while (b1p)
-        moveList = make_promotions<Us, Type, Up     >(pos, moveList, pop_lsb(b1p));
+        moveList = make_promotions<Us, Type, Up,     false>(pos, moveList, pop_lsb(b1p));
 
     while (b2p)
-        moveList = make_promotions<Us, Type, Up+Up  >(pos, moveList, pop_lsb(b2p));
+        moveList = make_promotions<Us, Type, Up+Up,  true>(pos, moveList, pop_lsb(b2p));
 
     while (b3p)
-        moveList = make_promotions<Us, Type, Up+Up+Up>(pos, moveList, pop_lsb(b3p));
+        moveList = make_promotions<Us, Type, Up+Up+Up, true>(pos, moveList, pop_lsb(b3p));
 
     // Sittuyin promotions
     if (pos.sittuyin_promotion() && (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS))
@@ -339,7 +345,7 @@ if (Type == QUIETS || Type == EVASIONS || Type == NON_EVASIONS)
 #endif
 
     // Standard and en passant captures
-    if (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
+    if constexpr (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
     {
 #ifndef FAIRY_STOCKFISH
         Bitboard b1 = shift<UpRight>(pawnsNotOn7) & enemies;
@@ -702,7 +708,7 @@ ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
                             : generate<NON_EVASIONS>(pos, moveList);
   while (cur != moveList)
 #ifndef FAIRY_STOCKFISH
-      if (  ((pinned && pinned & from_sq(*cur)) || from_sq(*cur) == ksq || type_of(*cur) == EN_PASSANT)
+      if (  ((pinned & from_sq(*cur)) || from_sq(*cur) == ksq || type_of(*cur) == EN_PASSANT)
           && !pos.legal(*cur))
 #else
       if (!pos.legal(*cur) || pos.virtual_drop(*cur))

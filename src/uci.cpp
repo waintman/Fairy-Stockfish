@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@
 #include <sstream>
 #include <string>
 
+#include "benchmark.h"
 #include "evaluate.h"
 #include "movegen.h"
 #include "position.h"
@@ -37,12 +38,11 @@
 #include "xboard.h"
 #endif
 #include "syzygy/tbprobe.h"
+#include "nnue/evaluate_nnue.h"
 
 using namespace std;
 
 namespace Stockfish {
-
-extern vector<string> setup_bench(const Position&, istream&);
 
 namespace {
 
@@ -233,7 +233,7 @@ namespace {
     uint64_t num, nodes = 0, cnt = 1;
 
     vector<string> list = setup_bench(pos, args);
-    num = count_if(list.begin(), list.end(), [](string s) { return s.find("go ") == 0 || s.find("eval") == 0; });
+    num = count_if(list.begin(), list.end(), [](const string& s) { return s.find("go ") == 0 || s.find("eval") == 0; });
 
     TimePoint elapsed = now();
 
@@ -279,8 +279,8 @@ namespace {
      // The coefficients of a third-order polynomial fit is based on the fishtest data
      // for two parameters that need to transform eval to the argument of a logistic
      // function.
-     constexpr double as[] = {  -0.58270499,    2.68512549,   15.24638015,  344.49745382};
-     constexpr double bs[] = {  -2.65734562,   15.96509799,  -20.69040836,   73.61029937 };
+     constexpr double as[] = {   0.38036525,   -2.82015070,   23.17882135,  307.36768407};
+     constexpr double bs[] = {  -2.29434733,   13.27689788,  -14.26828904,   63.45318330 };
 
      // Enforce that NormalizeToPawnValue corresponds to a 50% win rate at ply 64
      static_assert(UCI::NormalizeToPawnValue == int(as[0] + as[1] + as[2] + as[3]));
@@ -528,11 +528,22 @@ string UCI::value(Value v) {
   } else
 #endif
 
-  if (abs(v) < VALUE_MATE_IN_MAX_PLY)
+  if (abs(v) < VALUE_TB_WIN_IN_MAX_PLY)
 #ifndef FAIRY_STOCKFISH
       ss << "cp " << v * 100 / NormalizeToPawnValue;
 #else
       ss << (CurrentProtocol == UCCI ? "" : "cp ") << v * 100 / NormalizeToPawnValue;
+#endif
+  else if (abs(v) < VALUE_MATE_IN_MAX_PLY)
+  {
+      const int ply = VALUE_MATE_IN_MAX_PLY - 1 - std::abs(v);  // recompute ss->ply
+#ifndef FAIRY_STOCKFISH
+      ss << "cp " << (v > 0 ? 20000 - ply : -20000 + ply);
+#else
+      ss << (CurrentProtocol == UCCI ? "" : "cp ") << (v > 0 ? 20000 - ply : -20000 + ply);
+#endif
+  }
+#ifdef FAIRY_STOCKFISH
   else if (CurrentProtocol == USI)
       // In USI, mate distance is given in ply
       ss << "mate " << (v > 0 ? VALUE_MATE - v : -VALUE_MATE - v);
@@ -613,9 +624,6 @@ string UCI::move(Move m, bool chess960) {
 string UCI::move(const Position& pos, Move m) {
 #endif
 
-  Square from = from_sq(m);
-  Square to = to_sq(m);
-
   if (m == MOVE_NONE)
 #ifndef FAIRY_STOCKFISH
       return "(none)";
@@ -626,6 +634,8 @@ string UCI::move(const Position& pos, Move m) {
   if (m == MOVE_NULL)
       return "0000";
 
+  Square from = from_sq(m);
+  Square to = to_sq(m);
 #ifndef FAIRY_STOCKFISH
   if (type_of(m) == CASTLING && !chess960)
 #else
@@ -698,7 +708,7 @@ Move UCI::to_move(const Position& pos, string& str) {
       else
           // Junior could send promotion piece in uppercase
 #endif
-          str[4] = char(tolower(str[4])); // The promotion piece character must be lowercased
+      str[4] = char(tolower(str[4])); // The promotion piece character must be lowercased
 #ifdef FAIRY_STOCKFISH
   }
 #endif

@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -68,14 +68,13 @@ void init_variant(const Variant* v) {
 #endif
 
 /// 'On change' actions, triggered by an option's value change
-void on_clear_hash(const Option&) { Search::clear(); }
-void on_hash_size(const Option& o) { TT.resize(size_t(o)); }
-void on_logger(const Option& o) { start_logger(o); }
-void on_threads(const Option& o) { Threads.set(size_t(o)); }
-void on_tb_path(const Option& o) { Tablebases::init(o); }
-
-void on_use_NNUE(const Option& ) { Eval::NNUE::init(); }
-void on_eval_file(const Option& ) { Eval::NNUE::init(); }
+static void on_clear_hash(const Option&) { Search::clear(); }
+static void on_hash_size(const Option& o) { TT.resize(size_t(o)); }
+static void on_logger(const Option& o) { start_logger(o); }
+static void on_threads(const Option& o) { Threads.set(size_t(o)); }
+static void on_tb_path(const Option& o) { Tablebases::init(o); }
+static void on_use_NNUE(const Option&) { Eval::NNUE::init(); }
+static void on_eval_file(const Option&) { Eval::NNUE::init(); }
 #ifdef FAIRY_STOCKFISH
 
 void on_variant_path(const Option& o) {
@@ -213,9 +212,9 @@ void init(OptionsMap& o) {
   o["UCI_AnalyseMode"]       << Option(false);
   o["UCI_LimitStrength"]     << Option(false);
 #ifndef FAIRY_STOCKFISH
-  o["UCI_Elo"]               << Option(1350, 1350, 2850);
+  o["UCI_Elo"]               << Option(1320, 1320, 3190);
 #else
-  o["UCI_Elo"]               << Option(1350, 500, 2850);
+  o["UCI_Elo"]               << Option(1320, 500, 3190);
 #endif
   o["UCI_ShowWDL"]           << Option(false);
   o["SyzygyPath"]            << Option("<empty>", on_tb_path);
@@ -289,7 +288,7 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
               }
               else
 #endif
-                  os << "\noption name " << it.first << " type " << o.type;
+              os << "\noption name " << it.first << " type " << o.type;
 
               if (o.type == "string" || o.type == "check" || o.type == "combo")
                   os << " default " << o.defaultValue;
@@ -336,9 +335,9 @@ Option::Option(const char* v, const char* cur, OnChange f) : type("combo"), min(
 { defaultValue = v; currentValue = cur; }
 #endif
 
-Option::operator double() const {
+Option::operator int() const {
   assert(type == "check" || type == "spin");
-  return (type == "spin" ? stof(currentValue) : currentValue == "true");
+  return (type == "spin" ? std::stoi(currentValue) : currentValue == "true");
 }
 
 Option::operator std::string() const {

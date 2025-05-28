@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -115,9 +115,9 @@ constexpr bool Is64Bit = true;
 constexpr bool Is64Bit = false;
 #endif
 
-typedef uint64_t Key;
+using Key = uint64_t;
 #ifndef FAIRY_STOCKFISH
-typedef uint64_t Bitboard;
+using Bitboard = uint64_t;
 
 constexpr int MAX_MOVES = 256;
 constexpr int MAX_PLY   = 246;
@@ -239,6 +239,7 @@ typedef uint64_t Bitboard;
 constexpr int SQUARE_BITS = 6;
 #endif
 
+#ifdef FAIRY_STOCKFISH
 //When defined, move list will be stored in heap. Delete this if you want to use stack to store move list. Using stack can cause overflow (Segmentation Fault) when the search is too deep.
 #define USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
 
@@ -257,6 +258,7 @@ constexpr int MAX_PLY = 246;
 #endif
 /// endif ALLVARS
 
+#endif
 /// A move needs 16 bits to be stored
 ///
 /// bit  0- 5: destination square (from 0 to 63)
@@ -396,6 +398,9 @@ enum Value : int {
   VALUE_MATE_IN_MAX_PLY  =  VALUE_MATE - MAX_PLY,
   VALUE_MATED_IN_MAX_PLY = -VALUE_MATE_IN_MAX_PLY,
 
+  // In the code, we make the assumption that these values
+  // are such that non_pawn_material() can be used to uniquely
+  // identify the material on the board.
   PawnValueMg   = 126,   PawnValueEg   = 208,
   KnightValueMg = 781,   KnightValueEg = 854,
   BishopValueMg = 825,   BishopValueEg = 915,
@@ -542,7 +547,7 @@ extern Value EvalPieceValue[PHASE_NB][PIECE_NB]; // variant piece values for eva
 extern Value CapturePieceValue[PHASE_NB][PIECE_NB]; // variant piece values for captures/search
 #endif
 
-typedef int Depth;
+using Depth = int;
 
 enum : int {
   DEPTH_QS_CHECKS     =  0,
@@ -885,6 +890,12 @@ inline Color color_of(Piece pc) {
 #endif
 }
 
+#ifndef FAIRY_STOCKFISH
+constexpr bool is_ok(Move m) {
+  return m != MOVE_NONE && m != MOVE_NULL;
+}
+#endif
+
 constexpr bool is_ok(Square s) {
 #ifndef FAIRY_STOCKFISH
   return s >= SQ_A1 && s <= SQ_H8;
@@ -941,15 +952,19 @@ constexpr Direction pawn_push(Color c) {
 
 #ifndef FAIRY_STOCKFISH
 constexpr Square from_sq(Move m) {
+  assert(is_ok(m));
   return Square((m >> 6) & 0x3F);
 }
 #else
+
 constexpr MoveType type_of(Move m) {
   return MoveType(m & (15 << (2 * SQUARE_BITS)));
 }
+
 #endif
 
 constexpr Square to_sq(Move m) {
+  assert(is_ok(m));
 #ifndef FAIRY_STOCKFISH
   return Square(m & 0x3F);
 #else
@@ -1046,19 +1061,11 @@ constexpr PieceType in_hand_piece_type(Move m) {
 inline bool is_custom(PieceType pt) {
   return pt >= CUSTOM_PIECES && pt <= CUSTOM_PIECES_END;
 }
-#endif
 
-#ifndef FAIRY_STOCKFISH
-constexpr bool is_ok(Move m) {
-  return from_sq(m) != to_sq(m); // Catch MOVE_NULL and MOVE_NONE
-}
-#else
 inline bool is_ok(Move m) {
-  return from_sq(m) != to_sq(m) || type_of(m) == PROMOTION || type_of(m) == SPECIAL; // Catch MOVE_NULL and MOVE_NONE
+  return (m != MOVE_NONE && m != MOVE_NULL) || type_of(m) == PROMOTION || type_of(m) == SPECIAL; // Catch MOVE_NULL and MOVE_NONE
 }
-#endif
 
-#ifdef FAIRY_STOCKFISH
 inline int dist(Direction d) {
   return std::abs(d % NORTH) < NORTH / 2 ? std::max(std::abs(d / NORTH), int(std::abs(d % NORTH)))
       : std::max(std::abs(d / NORTH) + 1, int(NORTH - std::abs(d % NORTH)));

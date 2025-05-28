@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -106,7 +106,7 @@ struct StateInfo {
 /// start position to the position just before the search starts). Needed by
 /// 'draw by repetition' detection. Use a std::deque because pointers to
 /// elements are not invalidated upon list resizing.
-typedef std::unique_ptr<std::deque<StateInfo>> StateListPtr;
+using StateListPtr = std::unique_ptr<std::deque<StateInfo>>;
 
 
 /// Position class stores information regarding the board representation as
@@ -249,12 +249,10 @@ public:
 #else
   Bitboard pieces(PieceType pt = ALL_PIECES) const;
 #endif
-  Bitboard pieces(PieceType pt1, PieceType pt2) const;
+  template<typename ...PieceTypes> Bitboard pieces(PieceType pt, PieceTypes... pts) const;
   Bitboard pieces(Color c) const;
-  Bitboard pieces(Color c, PieceType pt) const;
-  Bitboard pieces(Color c, PieceType pt1, PieceType pt2) const;
+  template<typename ...PieceTypes> Bitboard pieces(Color c, PieceTypes... pts) const;
 #ifdef FAIRY_STOCKFISH
-  Bitboard pieces(Color c, PieceType pt1, PieceType pt2, PieceType pt3) const;
   Bitboard major_pieces(Color c) const;
   Bitboard non_sliding_riders() const;
 #endif
@@ -326,6 +324,7 @@ public:
 #ifdef FAIRY_STOCKFISH
   Square capture_square(Square to) const;
 #endif
+  bool capture_stage(Move m) const;
   bool gives_check(Move m) const;
   Piece moved_piece(Move m) const;
   Piece captured_piece() const;
@@ -353,6 +352,7 @@ public:
   Value blast_see(Move m) const;
 #endif
   bool see_ge(Move m, Value threshold = VALUE_ZERO) const;
+  bool see_ge(Move m, Bitboard& occupied, Value threshold = VALUE_ZERO) const;
 
   // Accessing hash keys
   Key key() const;
@@ -414,8 +414,8 @@ public:
 private:
   // Initialization helpers (used while setting up a position)
   void set_castling_right(Color c, Square rfrom);
-  void set_state(StateInfo* si) const;
-  void set_check_info(StateInfo* si) const;
+  void set_state() const;
+  void set_check_info() const;
 
   // Other helpers
   void move_piece(Square from, Square to);
@@ -459,7 +459,7 @@ private:
 #endif
 };
 
-extern std::ostream& operator<<(std::ostream& os, const Position& pos);
+std::ostream& operator<<(std::ostream& os, const Position& pos);
 
 #ifdef FAIRY_STOCKFISH
 inline const Variant* Position::variant() const {
@@ -1073,11 +1073,11 @@ inline bool Position::flag_move() const {
 
 inline bool Position::flag_reached(Color c) const {
   assert(var != nullptr);
-  bool simpleResult = 
+  bool simpleResult =
         (flag_region(c) & pieces(c, flag_piece(c)))
         && (   popcount(flag_region(c) & pieces(c, flag_piece(c))) >= var->flagPieceCount
             || (var->flagPieceBlockedWin && !(flag_region(c) & ~pieces())));
-      
+
   if (simpleResult&&var->flagPieceSafe)
   {
       Bitboard piecesInFlagZone = flag_region(c) & pieces(c, flag_piece(c));
@@ -1087,7 +1087,7 @@ inline bool Position::flag_reached(Color c) const {
       pieces in the flag zone and they need to be safe: If I have 3 pieces there, but one is under
       threat, I don't think I can declare victory. If I have 4 there, but one is under threat, I
       think that's victory.
-      */      
+      */
       while (piecesInFlagZone)
       {
           Square sr = pop_lsb(piecesInFlagZone);
@@ -1221,27 +1221,21 @@ inline Bitboard Position::pieces(PieceType pt) const {
   return byTypeBB[pt];
 }
 
-inline Bitboard Position::pieces(PieceType pt1, PieceType pt2) const {
-  return pieces(pt1) | pieces(pt2);
+template<typename ...PieceTypes>
+inline Bitboard Position::pieces(PieceType pt, PieceTypes... pts) const {
+  return pieces(pt) | pieces(pts...);
 }
 
 inline Bitboard Position::pieces(Color c) const {
   return byColorBB[c];
 }
 
-inline Bitboard Position::pieces(Color c, PieceType pt) const {
-  return pieces(c) & pieces(pt);
-}
-
-inline Bitboard Position::pieces(Color c, PieceType pt1, PieceType pt2) const {
-  return pieces(c) & (pieces(pt1) | pieces(pt2));
+template<typename ...PieceTypes>
+inline Bitboard Position::pieces(Color c, PieceTypes... pts) const {
+  return pieces(c) & pieces(pts...);
 }
 
 #ifdef FAIRY_STOCKFISH
-inline Bitboard Position::pieces(Color c, PieceType pt1, PieceType pt2, PieceType pt3) const {
-  return pieces(c) & (pieces(pt1) | pieces(pt2) | pieces(pt3));
-}
-
 inline Bitboard Position::major_pieces(Color c) const {
   return pieces(c) & (pieces(QUEEN) | pieces(AIWOK) | pieces(ARCHBISHOP) | pieces(CHANCELLOR) | pieces(AMAZON));
 }
@@ -1528,14 +1522,22 @@ inline bool Position::is_chess960() const {
 
 inline bool Position::capture(Move m) const {
   assert(is_ok(m));
-  // Castling is encoded as "king captures rook"
-#ifndef FAIRY_STOCKFISH
-  return (!empty(to_sq(m)) && type_of(m) != CASTLING) || type_of(m) == EN_PASSANT;
-}
-#else
-  return (!empty(to_sq(m)) && type_of(m) != CASTLING && from_sq(m) != to_sq(m)) || type_of(m) == EN_PASSANT;
+  return     (!empty(to_sq(m)) && type_of(m) != CASTLING
+#ifdef FAIRY_STOCKFISH
+          && from_sq(m) != to_sq(m)
+#endif
+          ) ||  type_of(m) == EN_PASSANT;
 }
 
+// returns true if a move is generated from the capture stage
+// having also queen promotions covered, i.e. consistency with the capture stage move generation
+// is needed to avoid the generation of duplicate moves.
+inline bool Position::capture_stage(Move m) const {
+  assert(is_ok(m));
+  return  capture(m) || promotion_type(m) == QUEEN;
+}
+
+#ifdef FAIRY_STOCKFISH
 inline Square Position::capture_square(Square to) const {
   assert(is_ok(to));
   // The capture square of en passant is either the marked ep piece or the closest piece behind the target square

@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@
 #include "timeman.h"
 #include "uci.h"
 #include "incbin/incbin.h"
-
+#include "nnue/evaluate_nnue.h"
 
 // Macro to embed the default efficiently updatable neural network (NNUE) file
 // data in the engine binary (using incbin.h, by Dale Weiler).
@@ -111,20 +111,18 @@ namespace Eval {
         eval_file = EvalFileDefaultName;
 
     #if defined(DEFAULT_NNUE_DIRECTORY)
-    #define stringify2(x) #x
-    #define stringify(x) stringify2(x)
     vector<string> dirs = { "<internal>" , "" , CommandLine::binaryDirectory , stringify(DEFAULT_NNUE_DIRECTORY) };
     #else
     vector<string> dirs = { "<internal>" , "" , CommandLine::binaryDirectory };
     #endif
 
-    for (string directory : dirs)
+    for (const string& directory : dirs)
         if (currentEvalFileName != eval_file)
         {
             if (directory != "<internal>")
             {
                 ifstream stream(directory + eval_file, ios::binary);
-                if (load_eval(eval_file, stream))
+                if (NNUE::load_eval(eval_file, stream))
                     currentEvalFileName = eval_file;
             }
 
@@ -140,7 +138,7 @@ namespace Eval {
                 (void) gEmbeddedNNUEEnd; // Silence warning on unused variable
 
                 istream stream(&buffer);
-                if (load_eval(eval_file, stream))
+                if (NNUE::load_eval(eval_file, stream))
                     currentEvalFileName = eval_file;
             }
         }
@@ -178,15 +176,15 @@ namespace Eval {
     if (CurrentProtocol != XBOARD)
     {
 #endif
-        if (useNNUE)
+    if (useNNUE)
 #ifndef FAIRY_STOCKFISH
-            sync_cout << "info string NNUE evaluation using " << eval_file << " enabled" << sync_endl;
-        else
-            sync_cout << "info string classical evaluation enabled" << sync_endl;
+        sync_cout << "info string NNUE evaluation using " << eval_file << " enabled" << sync_endl;
+    else
+        sync_cout << "info string classical evaluation enabled" << sync_endl;
 #else
-            sync_cout << "info string NNUE evaluation using " << currentEvalFileName << " enabled" << sync_endl;
-        else
-            sync_cout << "info string classical evaluation enabled" << sync_endl;
+        sync_cout << "info string NNUE evaluation using " << currentEvalFileName << " enabled" << sync_endl;
+    else
+        sync_cout << "info string classical evaluation enabled" << sync_endl;
     }
 #endif
   }
@@ -207,24 +205,24 @@ namespace Trace {
 
   Score scores[TERM_NB][COLOR_NB];
 
-  double to_cp(Value v) { return double(v) / UCI::NormalizeToPawnValue; }
+  static double to_cp(Value v) { return double(v) / UCI::NormalizeToPawnValue; }
 
-  void add(int idx, Color c, Score s) {
+  static void add(int idx, Color c, Score s) {
     scores[idx][c] = s;
   }
 
-  void add(int idx, Score w, Score b = SCORE_ZERO) {
+  static void add(int idx, Score w, Score b = SCORE_ZERO) {
     scores[idx][WHITE] = w;
     scores[idx][BLACK] = b;
   }
 
-  std::ostream& operator<<(std::ostream& os, Score s) {
+  static std::ostream& operator<<(std::ostream& os, Score s) {
     os << std::setw(5) << to_cp(mg_value(s)) << " "
        << std::setw(5) << to_cp(eg_value(s));
     return os;
   }
 
-  std::ostream& operator<<(std::ostream& os, Term t) {
+  static std::ostream& operator<<(std::ostream& os, Term t) {
 
     if (t == MATERIAL || t == IMBALANCE || t == WINNABLE || t == TOTAL)
         os << " ----  ----"    << " | " << " ----  ----";
@@ -241,8 +239,8 @@ using namespace Trace;
 namespace {
 
   // Threshold for lazy and space evaluation
-  constexpr Value LazyThreshold1    =  Value(3631);
-  constexpr Value LazyThreshold2    =  Value(2084);
+  constexpr Value LazyThreshold1    =  Value(3622);
+  constexpr Value LazyThreshold2    =  Value(1962);
   constexpr Value SpaceThreshold    =  Value(11551);
 
   // KingAttackWeights[PieceType] contains king attack weights by piece type
@@ -529,10 +527,10 @@ namespace {
   Score Evaluation<T>::pieces(PieceType Pt) {
 #endif
 
-    constexpr Color     Them = ~Us;
-    constexpr Direction Down = -pawn_push(Us);
-    constexpr Bitboard OutpostRanks = (Us == WHITE ? Rank4BB | Rank5BB | Rank6BB
-                                                   : Rank5BB | Rank4BB | Rank3BB);
+    constexpr Color Them = ~Us;
+    [[maybe_unused]] constexpr Direction Down = -pawn_push(Us);
+    [[maybe_unused]] constexpr Bitboard OutpostRanks = (Us == WHITE ? Rank4BB | Rank5BB | Rank6BB
+                                                                    : Rank5BB | Rank4BB | Rank3BB);
     Bitboard b1 = pos.pieces(Us, Pt);
     Bitboard b, bb;
     Score score = SCORE_ZERO;
@@ -590,7 +588,7 @@ namespace {
 #ifdef FAIRY_STOCKFISH
         if (Pt <= QUEEN)
 #endif
-            mobility[Us] += MobilityBonus[Pt - 2][mob];
+        mobility[Us] += MobilityBonus[Pt - 2][mob];
 #ifdef FAIRY_STOCKFISH
         else
             mobility[Us] += MaxMobility * (mob - 2) / (8 + mob);
@@ -624,7 +622,11 @@ namespace {
             score += ConnectedSoldier;
 #endif
 
+#ifndef FAIRY_STOCKFISH
+        if constexpr (Pt == BISHOP || Pt == KNIGHT)
+#else
         if (Pt == BISHOP || Pt == KNIGHT)
+#endif
         {
             // Bonus if the piece is on an outpost square or can reach one
             // Bonus for knights (UncontestedOutpost) if few relevant targets
@@ -1890,70 +1892,55 @@ make_v:
 /// evaluate() is the evaluator for the outer world. It returns a static
 /// evaluation of the position from the point of view of the side to move.
 
-Value Eval::evaluate(const Position& pos, int* complexity) {
+Value Eval::evaluate(const Position& pos) {
+
+  assert(!pos.checkers());
 
   Value v;
   Value psq = pos.psq_eg_stm();
 
   // We use the much less accurate but faster Classical eval when the NNUE
   // option is set to false. Otherwise we use the NNUE eval unless the
-  // PSQ advantage is decisive and several pieces remain. (~3 Elo)
+  // PSQ advantage is decisive. (~4 Elo at STC, 1 Elo at LTC)
 #ifndef FAIRY_STOCKFISH
-  bool useClassical = !useNNUE || (pos.count<ALL_PIECES>() > 7 && abs(psq) > 1760);
+  bool useClassical = !useNNUE || abs(psq) > 2048;
 #else
-  bool useClassical = !useNNUE || !pos.nnue_applicable() || (pos.count<ALL_PIECES>() > 7 && abs(psq) > 1760);
+  bool useClassical = !useNNUE || !pos.nnue_applicable() || abs(psq) > 2048;
 #endif
+
   if (useClassical)
       v = Evaluation<NO_TRACE>(pos).value();
   else
   {
       int nnueComplexity;
-      int scale = 1064 + 106 * pos.non_pawn_material() / 5120;
+      int npm = pos.non_pawn_material() / 64;
 
       Color stm = pos.side_to_move();
       Value optimism = pos.this_thread()->optimism[stm];
 
       Value nnue = NNUE::evaluate(pos, true, &nnueComplexity);
-
-#ifdef FAIRY_STOCKFISH
-      bool pure = !pos.check_counting();
-#endif
-      // Blend nnue complexity with (semi)classical complexity
-      nnueComplexity = (  416 * nnueComplexity
-                        + 424 * abs(psq - nnue)
-                        + (optimism  > 0 ? int(optimism) * int(psq - nnue) : 0)
-                        ) / 1024;
-
-      // Return hybrid NNUE complexity to caller
-      if (complexity)
-          *complexity = nnueComplexity;
-
-      optimism = optimism * (269 + nnueComplexity) / 256;
-      v = (nnue * scale + optimism * (scale - 754)) / 1024;
+      // Blend optimism with nnue complexity and (semi)classical complexity
+      optimism += optimism * (nnueComplexity + abs(psq - nnue)) / 512;
+      v = (nnue * (945 + npm) + optimism * (150 + npm)) / 1024;
   }
 
   // Damp down the evaluation linearly when shuffling
 #ifndef FAIRY_STOCKFISH
-  v = v * (195 - pos.rule50_count()) / 211;
+  v = v * (200 - pos.rule50_count()) / 214;
 #else
   if (pos.n_move_rule())
   {
-      v = v * (2 * pos.n_move_rule() - pos.rule50_count()) / (2 * pos.n_move_rule());
+      v = v * (200 - pos.rule50_count()) / (2 * pos.n_move_rule());
       if (pos.material_counting())
-          v += pos.material_counting_result() / (10 * std::max(2 * pos.n_move_rule() - pos.rule50_count(), 1));
+          v += pos.material_counting_result() / (10 * std::max(200 - pos.rule50_count(), 1));
   }
 
   // Guarantee evaluation does not hit the virtual win/loss range
   if (pos.two_boards() && std::abs(v) >= VALUE_VIRTUAL_MATE_IN_MAX_PLY)
       v += v > VALUE_ZERO ? MAX_PLY + 1 : -MAX_PLY - 1;
 #endif
-
   // Guarantee evaluation does not hit the tablebase range
   v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
-
-  // When not using NNUE, return classical complexity to caller
-  if (complexity && (!useNNUE || useClassical))
-      *complexity = abs(v - psq);
 
   return v;
 }

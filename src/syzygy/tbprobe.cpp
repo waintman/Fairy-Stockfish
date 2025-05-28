@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2022 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -24,9 +24,10 @@
 #include <fstream>
 #include <iostream>
 #include <list>
-#include <sstream>
-#include <type_traits>
 #include <mutex>
+#include <sstream>
+#include <string_view>
+#include <type_traits>
 
 #include "../bitboard.h"
 #include "../movegen.h"
@@ -71,7 +72,7 @@ inline WDLScore operator-(WDLScore d) { return WDLScore(-int(d)); }
 inline Square operator^(Square s, int i) { return Square(int(s) ^ i); }
 
 #ifndef FAIRY_STOCKFISH
-const std::string PieceToChar = " PNBRQK  pnbrqk";
+constexpr std::string_view PieceToChar = " PNBRQK  pnbrqk";
 #else
 const std::string PieceToChar(  " PNBRQ" + std::string(KING - QUEEN - 1, ' ') + "K" + std::string(PIECE_TYPE_NB - KING - 1, ' ')
                               + " pnbrq" + std::string(KING - QUEEN - 1, ' ') + "k" + std::string(PIECE_TYPE_NB - KING - 1, ' '));
@@ -146,7 +147,7 @@ struct SparseEntry {
 
 static_assert(sizeof(SparseEntry) == 6, "SparseEntry must be 6 bytes");
 
-typedef uint16_t Sym; // Huffman symbol
+using Sym = uint16_t; // Huffman symbol
 
 struct LR {
     enum Side { Left, Right };
@@ -204,13 +205,10 @@ public:
         }
     }
 
-    // Memory map the file and check it. File should be already open and will be
-    // closed after mapping.
+    // Memory map the file and check it.
     uint8_t* map(void** baseAddress, uint64_t* mapping, TBType type) {
-
-        assert(is_open());
-
-        close(); // Need to re-open to get native file descriptor
+        if (is_open())
+            close(); // Need to re-open to get native file descriptor
 
 #ifndef _WIN32
         struct stat statbuf;
@@ -241,7 +239,7 @@ public:
         }
 #else
         // Note FILE_FLAG_RANDOM_ACCESS is only a hint to Windows and as such may get ignored.
-        HANDLE fd = CreateFile(fname.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+        HANDLE fd = CreateFileA(fname.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                                OPEN_EXISTING, FILE_FLAG_RANDOM_ACCESS, nullptr);
 
         if (fd == INVALID_HANDLE_VALUE)
@@ -334,7 +332,7 @@ struct PairsData {
 // first access, when the corresponding file is memory mapped.
 template<TBType Type>
 struct TBTable {
-    typedef typename std::conditional<Type == WDL, WDLScore, int>::type Ret;
+    using Ret = typename std::conditional<Type == WDL, WDLScore, int>::type;
 
     static constexpr int Sides = Type == WDL ? 2 : 1;
 
@@ -830,7 +828,7 @@ Ret do_probe_table(const Position& pos, T* entry, WDLScore wdl, ProbeState* resu
         int adjust2 = (squares[2] > squares[0]) + (squares[2] > squares[1]);
 
         // First piece is below a1-h8 diagonal. MapA1D1D4[] maps the b1-d1-d3
-        // triangle to 0...5. There are 63 squares for second piece and 62
+        // triangle to 0...5. There are 63 squares for second piece and and 62
         // (mapped to 0...61) for the third.
         if (off_A1H8(squares[0]))
             idx = (   MapA1D1D4[squares[0]]  * 63
@@ -1427,7 +1425,7 @@ void Tablebases::init(const std::string& paths) {
                 }
 
 #ifndef FAIRY_STOCKFISH
-               for (PieceType p4 = PAWN; p4 < KING; ++p4) {
+                for (PieceType p4 = PAWN; p4 < KING; ++p4) {
 #else
                 for (PieceType p4 = PAWN; p4 <= QUEEN; ++p4) {
 #endif
@@ -1555,7 +1553,7 @@ int Tablebases::probe_dtz(Position& pos, ProbeState* result) {
 // A return value false indicates that not all probes were successful.
 bool Tablebases::root_probe(Position& pos, Search::RootMoves& rootMoves) {
 
-    ProbeState result;
+    ProbeState result = OK;
     StateInfo st;
 
     // Obtain 50-move counter for the root position
@@ -1634,7 +1632,7 @@ bool Tablebases::root_probe_wdl(Position& pos, Search::RootMoves& rootMoves) {
 
     static const int WDL_to_rank[] = { -MAX_DTZ, -MAX_DTZ + 101, 0, MAX_DTZ - 101, MAX_DTZ };
 
-    ProbeState result;
+    ProbeState result = OK;
     StateInfo st;
     WDLScore wdl;
 
