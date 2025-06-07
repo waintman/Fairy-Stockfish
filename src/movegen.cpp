@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,9 +16,12 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <cassert>
-
 #include "movegen.h"
+
+#include <cassert>
+#include <initializer_list>
+
+#include "bitboard.h"
 #include "position.h"
 
 namespace Stockfish {
@@ -26,11 +29,11 @@ namespace Stockfish {
 namespace {
 
 #ifdef FAIRY_STOCKFISH
-  template<MoveType T>
-  ExtMove* make_move_and_gating(const Position& pos, ExtMove* moveList, Color us, Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
+template<MoveType T>
+ExtMove* make_move_and_gating(const Position& pos, ExtMove* moveList, Color us, Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
 
-    // Wall placing moves
-    //if it's "wall or move", and they chose non-null move, skip even generating wall move
+// Wall placing moves
+//if it's "wall or move", and they chose non-null move, skip even generating wall move
     if (pos.walling() && !(pos.variant()->wallOrMove && (from!=to)))
     {
         Bitboard b = pos.board_bb() & ~((pos.pieces() ^ from) | to);
@@ -57,8 +60,8 @@ namespace {
             Bitboard wallsquares = pos.state()->wallSquares;
 
             b &= (FileABB | file_bb(pos.max_file()) | Rank1BB | rank_bb(pos.max_rank())) |
-               ( shift<NORTH     >(wallsquares) | shift<SOUTH     >(wallsquares)
-               | shift<EAST      >(wallsquares) | shift<WEST      >(wallsquares));
+                ( shift<NORTH     >(wallsquares) | shift<SOUTH     >(wallsquares)
+                | shift<EAST      >(wallsquares) | shift<WEST      >(wallsquares));
         }
         while (b)
             *moveList++ = make_gating<T>(from, to, pt, pop_lsb(b));
@@ -84,28 +87,30 @@ namespace {
         }
 
     return moveList;
-  }
+}
 #endif
-
 #ifndef FAIRY_STOCKFISH
-  template<GenType Type, Direction D, bool Enemy>
-  ExtMove* make_promotions(ExtMove* moveList, [[maybe_unused]] Square to) {
+template<GenType Type, Direction D, bool Enemy>
+
+ExtMove* make_promotions(ExtMove* moveList, [[maybe_unused]] Square to) {
 #else
-  template<Color c, GenType Type, Direction D, bool Enemy>
-  ExtMove* make_promotions(const Position& pos, ExtMove* moveList, Square to) {
+template<Color c, GenType Type, Direction D, bool Enemy>
+ExtMove* make_promotions(const Position& pos, ExtMove* moveList, Square to) {
 #endif
 
-    if constexpr (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
+    constexpr bool all = Type == EVASIONS || Type == NON_EVASIONS;
+
+    if constexpr (Type == CAPTURES || all)
 #ifndef FAIRY_STOCKFISH
+        *moveList++ = Move::make<PROMOTION>(to - D, to, QUEEN);
+
+    if constexpr ((Type == CAPTURES && Enemy) || (Type == QUIETS && !Enemy) || all)
     {
-        *moveList++ = make<PROMOTION>(to - D, to, QUEEN);
-        if constexpr (Enemy && Type == CAPTURES)
-        {
-            *moveList++ = make<PROMOTION>(to - D, to, ROOK);
-            *moveList++ = make<PROMOTION>(to - D, to, BISHOP);
-            *moveList++ = make<PROMOTION>(to - D, to, KNIGHT);
-        }
+        *moveList++ = Move::make<PROMOTION>(to - D, to, ROOK);
+        *moveList++ = Move::make<PROMOTION>(to - D, to, BISHOP);
+        *moveList++ = Move::make<PROMOTION>(to - D, to, KNIGHT);
     }
+
 #else
     {
         for (PieceSet promotions = pos.promotion_piece_types(c); promotions;)
@@ -119,20 +124,12 @@ namespace {
             moveList = make_move_and_gating<PIECE_PROMOTION>(pos, moveList, pos.side_to_move(), to - D, to);
     }
 #endif
-#ifndef FAIRY_STOCKFISH
-    if constexpr ((Type == QUIETS && !Enemy) || Type == EVASIONS || Type == NON_EVASIONS)
-    {
-        *moveList++ = make<PROMOTION>(to - D, to, ROOK);
-        *moveList++ = make<PROMOTION>(to - D, to, BISHOP);
-        *moveList++ = make<PROMOTION>(to - D, to, KNIGHT);
-    }
-#endif
     return moveList;
-  }
+}
 
 #ifdef FAIRY_STOCKFISH
-  template<Color Us, GenType Type>
-  ExtMove* generate_drops(const Position& pos, ExtMove* moveList, PieceType pt, Bitboard b) {
+template<Color Us, GenType Type>
+ExtMove* generate_drops(const Position& pos, ExtMove* moveList, PieceType pt, Bitboard b) {
     assert(Type != CAPTURES);
     // Do not generate virtual drops for perft and at root
     if (pos.can_drop(Us, pt) || (Type != NON_EVASIONS && pos.two_boards() && pos.allow_virtual_drop(Us, pt)))
@@ -156,21 +153,21 @@ namespace {
     }
 
     return moveList;
-  }
+}
 #endif
 
-  template<Color Us, GenType Type>
-  ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
+template<Color Us, GenType Type>
+ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
+
 #ifdef FAIRY_STOCKFISH
 
     if (!pos.pieces(Us, PAWN))
         return moveList;
 #endif
-
     constexpr Color     Them     = ~Us;
 #ifndef FAIRY_STOCKFISH
-    constexpr Bitboard  TRank7BB = (Us == WHITE ? Rank7BB    : Rank2BB);
-    constexpr Bitboard  TRank3BB = (Us == WHITE ? Rank3BB    : Rank6BB);
+    constexpr Bitboard  TRank7BB = (Us == WHITE ? Rank7BB : Rank2BB);
+    constexpr Bitboard  TRank3BB = (Us == WHITE ? Rank3BB : Rank6BB);
 #endif
     constexpr Direction Up       = pawn_push(Us);
     constexpr Direction UpRight  = (Us == WHITE ? NORTH_EAST : SOUTH_WEST);
@@ -178,10 +175,9 @@ namespace {
 
 #ifndef FAIRY_STOCKFISH
     const Bitboard emptySquares = ~pos.pieces();
-    const Bitboard enemies      =  Type == EVASIONS ? pos.checkers()
-                                                    : pos.pieces(Them);
+    const Bitboard enemies      = Type == EVASIONS ? pos.checkers() : pos.pieces(Them);
 
-    Bitboard pawnsOn7    = pos.pieces(Us, PAWN) &  TRank7BB;
+    Bitboard pawnsOn7    = pos.pieces(Us, PAWN) & TRank7BB;
     Bitboard pawnsNotOn7 = pos.pieces(Us, PAWN) & ~TRank7BB;
 #else
     const Bitboard promotionZone = pos.promotion_zone(Us);
@@ -234,10 +230,10 @@ namespace {
     if constexpr (Type != CAPTURES)
     {
 #ifndef FAIRY_STOCKFISH
-        Bitboard b1 = shift<Up>(pawnsNotOn7)   & emptySquares;
+        Bitboard b1 = shift<Up>(pawnsNotOn7) & emptySquares;
         Bitboard b2 = shift<Up>(b1 & TRank3BB) & emptySquares;
 
-        if constexpr (Type == EVASIONS) // Consider only blocking squares
+        if constexpr (Type == EVASIONS)  // Consider only blocking squares
         {
             b1 &= target;
             b2 &= target;
@@ -248,18 +244,18 @@ namespace {
             // To make a quiet check, you either make a direct check by pushing a pawn
             // or push a blocker pawn that is not on the same file as the enemy king.
             // Discovered check promotion has been already generated amongst the captures.
-            Square ksq = pos.square<KING>(Them);
+            Square   ksq              = pos.square<KING>(Them);
             Bitboard dcCandidatePawns = pos.blockers_for_king(Them) & ~file_bb(ksq);
-            b1 &= pawn_attacks_bb(Them, ksq) | shift<   Up>(dcCandidatePawns);
-            b2 &= pawn_attacks_bb(Them, ksq) | shift<Up+Up>(dcCandidatePawns);
+            b1 &= pawn_attacks_bb(Them, ksq) | shift<Up>(dcCandidatePawns);
+            b2 &= pawn_attacks_bb(Them, ksq) | shift<Up + Up>(dcCandidatePawns);
         }
 
 #endif
         while (b1)
         {
-            Square to = pop_lsb(b1);
+            Square to   = pop_lsb(b1);
 #ifndef FAIRY_STOCKFISH
-            *moveList++ = make_move(to - Up, to);
+            *moveList++ = Move(to - Up, to);
 #else
             moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, to - Up, to);
 #endif
@@ -267,9 +263,9 @@ namespace {
 
         while (b2)
         {
-            Square to = pop_lsb(b2);
+            Square to   = pop_lsb(b2);
 #ifndef FAIRY_STOCKFISH
-            *moveList++ = make_move(to - Up - Up, to);
+            *moveList++ = Move(to - Up - Up, to);
         }
 #else
             moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, to - Up - Up, to);
@@ -288,8 +284,8 @@ namespace {
     if (pawnsOn7)
     {
         Bitboard b1 = shift<UpRight>(pawnsOn7) & enemies;
-        Bitboard b2 = shift<UpLeft >(pawnsOn7) & enemies;
-        Bitboard b3 = shift<Up     >(pawnsOn7) & emptySquares;
+        Bitboard b2 = shift<UpLeft>(pawnsOn7) & enemies;
+        Bitboard b3 = shift<Up>(pawnsOn7) & emptySquares;
 
         if constexpr (Type == EVASIONS)
             b3 &= target;
@@ -301,7 +297,7 @@ namespace {
             moveList = make_promotions<Type, UpLeft, true>(moveList, pop_lsb(b2));
 
         while (b3)
-            moveList = make_promotions<Type, Up,    false>(moveList, pop_lsb(b3));
+            moveList = make_promotions<Type, Up, false>(moveList, pop_lsb(b3));
     }
 #else
     while (brcp)
@@ -349,18 +345,18 @@ namespace {
     {
 #ifndef FAIRY_STOCKFISH
         Bitboard b1 = shift<UpRight>(pawnsNotOn7) & enemies;
-        Bitboard b2 = shift<UpLeft >(pawnsNotOn7) & enemies;
+        Bitboard b2 = shift<UpLeft>(pawnsNotOn7) & enemies;
 
         while (b1)
         {
-            Square to = pop_lsb(b1);
-            *moveList++ = make_move(to - UpRight, to);
+            Square to   = pop_lsb(b1);
+            *moveList++ = Move(to - UpRight, to);
         }
 
         while (b2)
         {
-            Square to = pop_lsb(b2);
-            *moveList++ = make_move(to - UpLeft, to);
+            Square to   = pop_lsb(b2);
+            *moveList++ = Move(to - UpLeft, to);
         }
 
         if (pos.ep_square() != SQ_NONE)
@@ -376,7 +372,7 @@ namespace {
             assert(b1);
 
             while (b1)
-                *moveList++ = make<EN_PASSANT>(pop_lsb(b1), pos.ep_square());
+                *moveList++ = Move::make<EN_PASSANT>(pop_lsb(b1), pos.ep_square());
         }
 #else
         while (brc)
@@ -411,17 +407,17 @@ namespace {
     }
 
     return moveList;
-  }
+}
 
 
 #ifndef FAIRY_STOCKFISH
-  template<Color Us, PieceType Pt, bool Checks>
-  ExtMove* generate_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
+template<Color Us, PieceType Pt, bool Checks>
+ExtMove* generate_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
 
     static_assert(Pt != KING && Pt != PAWN, "Unsupported piece type in generate_moves()");
 #else
-  template<Color Us, GenType Type>
-  ExtMove* generate_moves(const Position& pos, ExtMove* moveList, PieceType Pt, Bitboard target) {
+template<Color Us, GenType Type>
+ExtMove* generate_moves(const Position& pos, ExtMove* moveList, PieceType Pt, Bitboard target) {
 
     assert(Pt != KING && Pt != PAWN);
 #endif
@@ -430,16 +426,16 @@ namespace {
 
     while (bb)
     {
-        Square from = pop_lsb(bb);
+        Square   from = pop_lsb(bb);
 #ifndef FAIRY_STOCKFISH
-        Bitboard b = attacks_bb<Pt>(from, pos.pieces()) & target;
+        Bitboard b    = attacks_bb<Pt>(from, pos.pieces()) & target;
 
         // To check, you either move freely a blocker or make a direct check.
         if (Checks && (Pt == QUEEN || !(pos.blockers_for_king(~Us) & from)))
             b &= pos.check_squares(Pt);
 
         while (b)
-            *moveList++ = make_move(from, pop_lsb(b));
+            *moveList++ = Move(from, pop_lsb(b));
 #else
 
         Bitboard attacks = pos.attacks_from(Us, Pt, from);
@@ -515,36 +511,36 @@ namespace {
     }
 
     return moveList;
-  }
+}
 
 
-  template<Color Us, GenType Type>
-  ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
+template<Color Us, GenType Type>
+ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
 
     static_assert(Type != LEGAL, "Unsupported type in generate_all()");
 
-    constexpr bool Checks = Type == QUIET_CHECKS; // Reduce template instantiations
+    constexpr bool Checks = Type == QUIET_CHECKS;  // Reduce template instantiations
 #ifndef FAIRY_STOCKFISH
-    const Square ksq = pos.square<KING>(Us);
+    const Square   ksq    = pos.square<KING>(Us);
 #else
     const Square ksq = pos.count<KING>(Us) ? pos.square<KING>(Us) : SQ_NONE;
 #endif
-    Bitboard target;
+    Bitboard       target;
 
     // Skip generating non-king moves when in double check
 #ifndef FAIRY_STOCKFISH
     if (Type != EVASIONS || !more_than_one(pos.checkers()))
     {
-        target = Type == EVASIONS     ?  between_bb(ksq, lsb(pos.checkers()))
-               : Type == NON_EVASIONS ? ~pos.pieces( Us)
-               : Type == CAPTURES     ?  pos.pieces(~Us)
-                                      : ~pos.pieces(   ); // QUIETS || QUIET_CHECKS
+        target = Type == EVASIONS     ? between_bb(ksq, lsb(pos.checkers()))
+               : Type == NON_EVASIONS ? ~pos.pieces(Us)
+               : Type == CAPTURES     ? pos.pieces(~Us)
+                                      : ~pos.pieces();  // QUIETS || QUIET_CHECKS
 
         moveList = generate_pawn_moves<Us, Type>(pos, moveList, target);
         moveList = generate_moves<Us, KNIGHT, Checks>(pos, moveList, target);
         moveList = generate_moves<Us, BISHOP, Checks>(pos, moveList, target);
-        moveList = generate_moves<Us,   ROOK, Checks>(pos, moveList, target);
-        moveList = generate_moves<Us,  QUEEN, Checks>(pos, moveList, target);
+        moveList = generate_moves<Us, ROOK, Checks>(pos, moveList, target);
+        moveList = generate_moves<Us, QUEEN, Checks>(pos, moveList, target);
     }
 
 #else
@@ -635,7 +631,7 @@ namespace {
 #endif
         while (b)
 #ifndef FAIRY_STOCKFISH
-            *moveList++ = make_move(ksq, pop_lsb(b));
+            *moveList++ = Move(ksq, pop_lsb(b));
 #else
             moveList = make_move_and_gating<NORMAL>(pos, moveList, Us, ksq, pop_lsb(b));
 
@@ -645,39 +641,39 @@ namespace {
 #endif
 
         if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
-            for (CastlingRights cr : { Us & KING_SIDE, Us & QUEEN_SIDE } )
+            for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
                 if (!pos.castling_impeded(cr) && pos.can_castle(cr))
 #ifndef FAIRY_STOCKFISH
-                    *moveList++ = make<CASTLING>(ksq, pos.castling_rook_square(cr));
+                    *moveList++ = Move::make<CASTLING>(ksq, pos.castling_rook_square(cr));
 #else
                     moveList = make_move_and_gating<CASTLING>(pos, moveList, Us,ksq, pos.castling_rook_square(cr));
 #endif
     }
 
     return moveList;
-  }
+}
 
-} // namespace
+}  // namespace
 
 
-/// <CAPTURES>     Generates all pseudo-legal captures plus queen promotions
-/// <QUIETS>       Generates all pseudo-legal non-captures and underpromotions
-/// <EVASIONS>     Generates all pseudo-legal check evasions when the side to move is in check
-/// <QUIET_CHECKS> Generates all pseudo-legal non-captures giving check, except castling and promotions
-/// <NON_EVASIONS> Generates all pseudo-legal captures and non-captures
-///
-/// Returns a pointer to the end of the move list.
-
+// <CAPTURES>     Generates all pseudo-legal captures plus queen promotions
+// <QUIETS>       Generates all pseudo-legal non-captures and underpromotions
+// <EVASIONS>     Generates all pseudo-legal check evasions
+// <NON_EVASIONS> Generates all pseudo-legal captures and non-captures
+// <QUIET_CHECKS> Generates all pseudo-legal non-captures giving check,
+//                except castling and promotions
+//
+// Returns a pointer to the end of the move list.
 template<GenType Type>
 ExtMove* generate(const Position& pos, ExtMove* moveList) {
 
-  static_assert(Type != LEGAL, "Unsupported type in generate()");
-  assert((Type == EVASIONS) == (bool)pos.checkers());
+    static_assert(Type != LEGAL, "Unsupported type in generate()");
+    assert((Type == EVASIONS) == bool(pos.checkers()));
 
-  Color us = pos.side_to_move();
+    Color us = pos.side_to_move();
 
-  return us == WHITE ? generate_all<WHITE, Type>(pos, moveList)
-                     : generate_all<BLACK, Type>(pos, moveList);
+    return us == WHITE ? generate_all<WHITE, Type>(pos, moveList)
+                       : generate_all<BLACK, Type>(pos, moveList);
 }
 
 // Explicit template instantiations
@@ -688,36 +684,36 @@ template ExtMove* generate<QUIET_CHECKS>(const Position&, ExtMove*);
 template ExtMove* generate<NON_EVASIONS>(const Position&, ExtMove*);
 
 
-/// generate<LEGAL> generates all the legal moves in the given position
+// generate<LEGAL> generates all the legal moves in the given position
 
 template<>
 ExtMove* generate<LEGAL>(const Position& pos, ExtMove* moveList) {
 
 #ifndef FAIRY_STOCKFISH
-  Color us = pos.side_to_move();
-  Bitboard pinned = pos.blockers_for_king(us) & pos.pieces(us);
-  Square ksq = pos.square<KING>(us);
+    Color    us     = pos.side_to_move();
+    Bitboard pinned = pos.blockers_for_king(us) & pos.pieces(us);
+    Square   ksq    = pos.square<KING>(us);
 #else
   if (pos.is_immediate_game_end())
       return moveList;
 
 #endif
-  ExtMove* cur = moveList;
+    ExtMove* cur    = moveList;
 
-  moveList = pos.checkers() ? generate<EVASIONS    >(pos, moveList)
-                            : generate<NON_EVASIONS>(pos, moveList);
-  while (cur != moveList)
+    moveList =
+      pos.checkers() ? generate<EVASIONS>(pos, moveList) : generate<NON_EVASIONS>(pos, moveList);
+    while (cur != moveList)
 #ifndef FAIRY_STOCKFISH
-      if (  ((pinned & from_sq(*cur)) || from_sq(*cur) == ksq || type_of(*cur) == EN_PASSANT)
-          && !pos.legal(*cur))
+        if (((pinned & cur->from_sq()) || cur->from_sq() == ksq || cur->type_of() == EN_PASSANT)
+            && !pos.legal(*cur))
 #else
       if (!pos.legal(*cur) || pos.virtual_drop(*cur))
 #endif
-          *cur = (--moveList)->move;
-      else
-          ++cur;
+            *cur = *(--moveList);
+        else
+            ++cur;
 
-  return moveList;
+    return moveList;
 }
 
-} // namespace Stockfish
+}  // namespace Stockfish

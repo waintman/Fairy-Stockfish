@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -16,56 +16,41 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "ucioption.h"
+
 #include <algorithm>
 #include <cassert>
-#include <ostream>
+#include <cctype>
+#include <iostream>
 #include <sstream>
 #ifdef FAIRY_STOCKFISH
 #include <iostream>
 #endif
+#include <utility>
 
-#include "evaluate.h"
 #include "misc.h"
 #ifdef FAIRY_STOCKFISH
 #include "piece.h"
-#endif
-#include "search.h"
-#include "thread.h"
-#include "tt.h"
-#include "uci.h"
-#ifdef FAIRY_STOCKFISH
 #include "variant.h"
 #endif
-#include "syzygy/tbprobe.h"
 
 using std::string;
 
 namespace Stockfish {
 
-UCI::OptionsMap Options; // Global object
 #ifdef FAIRY_STOCKFISH
 
 namespace PSQT {
   void init(const Variant* v);
 }
-#endif
-
-namespace UCI {
-#ifdef FAIRY_STOCKFISH
 
 // standard variants of XBoard/WinBoard
-std::set<string> standard_variants = {
+std::set<std::string> standard_variants = {
     "normal", "nocastle", "fischerandom", "knightmate", "3check", "makruk", "shatranj",
     "asean", "seirawan", "crazyhouse", "bughouse", "suicide", "giveaway", "losers", "atomic",
     "capablanca", "gothic", "janus", "caparandom", "grand", "shogi", "xiangqi", "duck",
     "berolina", "spartan"
 };
-
-void init_variant(const Variant* v) {
-    pieceMap.init(v);
-    Bitboards::init_pieces();
-}
-#endif
 
 /// 'On change' actions, triggered by an option's value change
 static void on_clear_hash(const Option&) { Search::clear(); }
@@ -75,7 +60,6 @@ static void on_threads(const Option& o) { Threads.set(size_t(o)); }
 static void on_tb_path(const Option& o) { Tablebases::init(o); }
 static void on_use_NNUE(const Option&) { Eval::NNUE::init(); }
 static void on_eval_file(const Option&) { Eval::NNUE::init(); }
-#ifdef FAIRY_STOCKFISH
 
 void on_variant_path(const Option& o) {
     std::stringstream ss((std::string)o);
@@ -177,66 +161,190 @@ void on_variant_change(const Option &o) {
 
 #endif
 
-/// Our case insensitive less() function as required by UCI protocol
-bool CaseInsensitiveLess::operator() (const string& s1, const string& s2) const {
+bool CaseInsensitiveLess::operator()(const std::string& s1, const std::string& s2) const {
 
-  return std::lexicographical_compare(s1.begin(), s1.end(), s2.begin(), s2.end(),
-         [](char c1, char c2) { return tolower(c1) < tolower(c2); });
+    return std::lexicographical_compare(
+      s1.begin(), s1.end(), s2.begin(), s2.end(),
+      [](char c1, char c2) { return std::tolower(c1) < std::tolower(c2); });
+}
+
+void OptionsMap::setoption(std::istringstream& is) {
+    std::string token, name, value;
+
+    is >> token;  // Consume the "name" token
+
+#ifdef FAIRY_STOCKFISH
+    if (CurrentProtocol == UCCI)
+        name = token;
+    else
+#endif
+    // Read the option name (can contain spaces)
+    while (is >> token && token != "value")
+        name += (name.empty() ? "" : " ") + token;
+
+    // Read the option value (can contain spaces)
+    while (is >> token)
+        value += (value.empty() ? "" : " ") + token;
+
+    if (options_map.count(name))
+#ifdef FAIRY_STOCKFISH
+        options_map[name] = value;
+    // Deal with option name aliases in UCI dialects
+    else if (is_valid_option(options_map, name))
+#endif
+        options_map[name] = value;
+    else
+        sync_cout << "No such option: " << name << sync_endl;
+}
+
+Option OptionsMap::operator[](const std::string& name) const {
+    auto it = options_map.find(name);
+    return it != options_map.end() ? it->second : Option();
+}
+
+Option& OptionsMap::operator[](const std::string& name) { return options_map[name]; }
+
+std::size_t OptionsMap::count(const std::string& name) const { return options_map.count(name); }
+
+Option::Option(const char* v, OnChange f) :
+    type("string"),
+    min(0),
+    max(0),
+    on_change(std::move(f)) {
+    defaultValue = currentValue = v;
+}
+#ifdef FAIRY_STOCKFISH
+Option::Option(const char* v, const std::vector<std::string>& values, OnChange f) : type("combo"), min(0), max(0), comboValues(values), on_change(std::move(f))
+
+{ defaultValue = currentValue = v; }
+#endif
+
+Option::Option(bool v, OnChange f) :
+    type("check"),
+    min(0),
+    max(0),
+    on_change(std::move(f)) {
+    defaultValue = currentValue = (v ? "true" : "false");
+}
+
+Option::Option(OnChange f) :
+    type("button"),
+    min(0),
+    max(0),
+    on_change(std::move(f)) {}
+
+Option::Option(double v, int minv, int maxv, OnChange f) :
+    type("spin"),
+    min(minv),
+    max(maxv),
+    on_change(std::move(f)) {
+    defaultValue = currentValue = std::to_string(v);
+}
+
+Option::Option(const char* v, const char* cur, OnChange f) :
+    type("combo"),
+    min(0),
+    max(0),
+    on_change(std::move(f)) {
+    defaultValue = v;
+    currentValue = cur;
+}
+
+Option::operator int() const {
+    assert(type == "check" || type == "spin");
+    return (type == "spin" ? std::stoi(currentValue) : currentValue == "true");
+}
+
+Option::operator std::string() const {
+#ifndef FAIRY_STOCKFISH
+    assert(type == "string");
+#else
+    assert(type == "string" || type == "combo");
+#endif
+    return currentValue;
+}
+
+bool Option::operator==(const char* s) const {
+    assert(type == "combo");
+    return !CaseInsensitiveLess()(currentValue, s) && !CaseInsensitiveLess()(s, currentValue);
+}
+#ifdef FAIRY_STOCKFISH
+
+bool Option::operator!=(const char* s) const {
+  assert(type == "combo");
+  return !(*this == s);
+}
+#endif
+
+
+// Inits options and assigns idx in the correct printing order
+
+void Option::operator<<(const Option& o) {
+
+    static size_t insert_order = 0;
+
+    *this = o;
+    idx   = insert_order++;
 }
 
 
-/// UCI::init() initializes the UCI options to their hard-coded default values
+// Updates currentValue and triggers on_change() action. It's up to
+// the GUI to check for option's limits, but we could receive the new value
+// from the user by console window, so let's check the bounds anyway.
+Option& Option::operator=(const std::string& v) {
 
-void init(OptionsMap& o) {
+    assert(!type.empty());
 
-  constexpr int MaxHashMB = Is64Bit ? 33554432 : 2048;
-
-  o["Debug Log File"]        << Option("", on_logger);
-  o["Threads"]               << Option(1, 1, 1024, on_threads);
-  o["Hash"]                  << Option(16, 1, MaxHashMB, on_hash_size);
-  o["Clear Hash"]            << Option(on_clear_hash);
-  o["Ponder"]                << Option(false);
-  o["MultiPV"]               << Option(1, 1, 500);
-#ifndef FAIRY_STOCKFISH
-  o["Skill Level"]           << Option(20, 0, 20);
-#else
-  o["Skill Level"]           << Option(20, -20, 20);
-#endif
-  o["Move Overhead"]         << Option(10, 0, 5000);
-  o["Slow Mover"]            << Option(100, 10, 1000);
-  o["nodestime"]             << Option(0, 0, 10000);
-  o["UCI_Chess960"]          << Option(false);
+    if ((type != "button" && type != "string" && v.empty())
+        || (type == "check" && v != "true" && v != "false")
 #ifdef FAIRY_STOCKFISH
-  o["UCI_Variant"]           << Option("janggimodern", variants.get_keys(), on_variant_change);
+        || (type == "combo" && (std::find(comboValues.begin(), comboValues.end(), v) == comboValues.end()))
 #endif
-  o["UCI_AnalyseMode"]       << Option(false);
-  o["UCI_LimitStrength"]     << Option(false);
+        || (type == "spin" && (std::stof(v) < min || std::stof(v) > max)))
+        return *this;
+
+    if (type == "combo")
+    {
+        OptionsMap         comboMap;  // To have case insensitive compare
 #ifndef FAIRY_STOCKFISH
-  o["UCI_Elo"]               << Option(1320, 1320, 3190);
+        std::string        token;
+        std::istringstream ss(defaultValue);
+        while (ss >> token)
 #else
-  o["UCI_Elo"]               << Option(1320, 500, 3190);
+        for (std::string token : comboValues)
 #endif
-  o["UCI_ShowWDL"]           << Option(false);
-  o["SyzygyPath"]            << Option("<empty>", on_tb_path);
-  o["SyzygyProbeDepth"]      << Option(1, 1, 100);
-  o["Syzygy50MoveRule"]      << Option(true);
-  o["SyzygyProbeLimit"]      << Option(7, 0, 7);
-  o["Use NNUE"]              << Option(true, on_use_NNUE);
-#ifndef NNUE_EMBEDDING_OFF
-  o["EvalFile"]              << Option(EvalFileDefaultName, on_eval_file);
-#else
-  o["EvalFile"]              << Option("<empty>", on_eval_file);
-#endif
+            comboMap[token] << Option();
+        if (!comboMap.count(v) || v == "var")
+            return *this;
+    }
+
+    if (type != "button")
+        currentValue = v;
+
+    if (on_change)
+        on_change(*this);
+
+    return *this;
+}
 #ifdef FAIRY_STOCKFISH
-  o["TsumeMode"]             << Option(false);
-  o["VariantPath"]           << Option("<empty>", on_variant_path);
-  o["usemillisec"]           << Option(true); // time unit for UCCI
-#endif
+
+void Option::set_combo(std::vector<std::string> newComboValues) {
+    comboValues = newComboValues;
 }
 
+void Option::set_default(std::string newDefault) {
+    defaultValue = currentValue = newDefault;
 
-/// operator<<() is used to print all the options default values in chronological
-/// insertion order (the idx field) and in the format defined by the UCI protocol.
+    // When changing the variant default, suppress variant definition output,
+    // but still do the essential re-initialization of the variant
+    if (on_change)
+        (on_change == on_variant_change ? on_variant_set : on_change)(*this);
+}
+
+const std::string Option::get_type() const {
+    return type;
+}
+#endif
 
 std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
 #ifdef FAIRY_STOCKFISH
@@ -272,12 +380,11 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
   }
   else
 #endif
-
-  for (size_t idx = 0; idx < om.size(); ++idx)
-      for (const auto& it : om)
-          if (it.second.idx == idx)
-          {
-              const Option& o = it.second;
+    for (size_t idx = 0; idx < om.options_map.size(); ++idx)
+        for (const auto& it : om.options_map)
+            if (it.second.idx == idx)
+            {
+                const Option& o = it.second;
 #ifdef FAIRY_STOCKFISH
               // UCI dialects do not allow spaces
               if (CurrentProtocol == UCCI || CurrentProtocol == USI)
@@ -288,151 +395,24 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
               }
               else
 #endif
-              os << "\noption name " << it.first << " type " << o.type;
+                os << "\noption name " << it.first << " type " << o.type;
 
-              if (o.type == "string" || o.type == "check" || o.type == "combo")
-                  os << " default " << o.defaultValue;
+                if (o.type == "string" || o.type == "check" || o.type == "combo")
+                    os << " default " << o.defaultValue;
 
 #ifdef FAIRY_STOCKFISH
-              if (o.type == "combo")
-                  for (string value : o.comboValues)
-                      os << " var " << value;
+                if (o.type == "combo")
+                    for (string value : o.comboValues)
+                        os << " var " << value;
 
 #endif
-              if (o.type == "spin")
-                  os << " default " << int(stof(o.defaultValue))
-                     << " min "     << o.min
-                     << " max "     << o.max;
+                if (o.type == "spin")
+                    os << " default " << int(stof(o.defaultValue)) << " min " << o.min << " max "
+                       << o.max;
 
-              break;
-          }
+                break;
+            }
 
-  return os;
+    return os;
 }
-
-
-/// Option class constructors and conversion operators
-
-Option::Option(const char* v, OnChange f) : type("string"), min(0), max(0), on_change(f)
-#ifdef FAIRY_STOCKFISH
-{ defaultValue = currentValue = v; }
-
-Option::Option(const char* v, const std::vector<std::string>& values, OnChange f) : type("combo"), min(0), max(0), comboValues(values), on_change(f)
-#endif
-{ defaultValue = currentValue = v; }
-
-Option::Option(bool v, OnChange f) : type("check"), min(0), max(0), on_change(f)
-{ defaultValue = currentValue = (v ? "true" : "false"); }
-
-Option::Option(OnChange f) : type("button"), min(0), max(0), on_change(f)
-{}
-
-Option::Option(double v, int minv, int maxv, OnChange f) : type("spin"), min(minv), max(maxv), on_change(f)
-{ defaultValue = currentValue = std::to_string(v); }
-#ifndef FAIRY_STOCKFISH
-
-Option::Option(const char* v, const char* cur, OnChange f) : type("combo"), min(0), max(0), on_change(f)
-{ defaultValue = v; currentValue = cur; }
-#endif
-
-Option::operator int() const {
-  assert(type == "check" || type == "spin");
-  return (type == "spin" ? std::stoi(currentValue) : currentValue == "true");
 }
-
-Option::operator std::string() const {
-#ifndef FAIRY_STOCKFISH
-  assert(type == "string");
-#else
-  assert(type == "string" || type == "combo");
-#endif
-  return currentValue;
-}
-
-bool Option::operator==(const char* s) const {
-  assert(type == "combo");
-  return   !CaseInsensitiveLess()(currentValue, s)
-        && !CaseInsensitiveLess()(s, currentValue);
-}
-#ifdef FAIRY_STOCKFISH
-
-bool Option::operator!=(const char* s) const {
-  assert(type == "combo");
-  return !(*this == s);
-}
-#endif
-
-
-/// operator<<() inits options and assigns idx in the correct printing order
-
-void Option::operator<<(const Option& o) {
-
-  static size_t insert_order = 0;
-
-  *this = o;
-  idx = insert_order++;
-}
-
-
-/// operator=() updates currentValue and triggers on_change() action. It's up to
-/// the GUI to check for option's limits, but we could receive the new value
-/// from the user by console window, so let's check the bounds anyway.
-
-Option& Option::operator=(const string& v) {
-
-  assert(!type.empty());
-
-  if (   (type != "button" && type != "string" && v.empty())
-      || (type == "check" && v != "true" && v != "false")
-#ifdef FAIRY_STOCKFISH
-      || (type == "combo" && (std::find(comboValues.begin(), comboValues.end(), v) == comboValues.end()))
-#endif
-      || (type == "spin" && (stof(v) < min || stof(v) > max)))
-      return *this;
-
-  if (type == "combo")
-  {
-      OptionsMap comboMap; // To have case insensitive compare
-#ifndef FAIRY_STOCKFISH
-      string token;
-      std::istringstream ss(defaultValue);
-      while (ss >> token)
-#else
-      for (string token : comboValues)
-#endif
-          comboMap[token] << Option();
-      if (!comboMap.count(v) || v == "var")
-          return *this;
-  }
-
-  if (type != "button")
-      currentValue = v;
-
-  if (on_change)
-      on_change(*this);
-
-  return *this;
-}
-#ifdef FAIRY_STOCKFISH
-
-void Option::set_combo(std::vector<std::string> newComboValues) {
-    comboValues = newComboValues;
-}
-
-void Option::set_default(std::string newDefault) {
-    defaultValue = currentValue = newDefault;
-
-    // When changing the variant default, suppress variant definition output,
-    // but still do the essential re-initialization of the variant
-    if (on_change)
-        (on_change == on_variant_change ? on_variant_set : on_change)(*this);
-}
-
-const std::string Option::get_type() const {
-    return type;
-}
-#endif
-
-} // namespace UCI
-
-} // namespace Stockfish
