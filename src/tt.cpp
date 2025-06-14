@@ -40,7 +40,7 @@ void TTEntry::save(
         move16 = m;
 
 #else
-        move32 = (uint32_t)m;
+        move32 = m.raw();
 #endif
     // Overwrite less valuable entries (cheapest checks first)
     if (b == BOUND_EXACT || uint16_t(k) != key16 || d - DEPTH_OFFSET + 2 * pv > depth8 - 4)

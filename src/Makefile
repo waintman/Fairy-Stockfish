@@ -63,7 +63,7 @@ SRCS = benchmark.cpp bitboard.cpp evaluate.cpp main.cpp \
 	nnue/evaluate_nnue.cpp nnue/features/half_ka_v2_hm.cpp
 
 ifeq ($(fairy),yes)
-	SRCS += partner.cpp parser.cpp piece.cpp variant.cpp xboard.cpp \
+	SRCS += parser.cpp piece.cpp variant.cpp \
 	        nnue/features/half_ka_v2_variants.cpp
 endif
 HEADERS = benchmark.h bitboard.h evaluate.h misc.h movegen.h movepick.h \
@@ -425,11 +425,6 @@ ifneq ($(largeboards),no)
 	ifeq ($(precomputedmagics),yes)
 		CXXFLAGS += -DPRECOMPUTED_MAGICS
 	endif
-endif
-
-# Embed and enable NNUE
-ifeq ($(nnue),no)
-	CXXFLAGS += -DNNUE_EMBEDDING_OFF
 endif
 
 # Enable all variants, even heavyweight ones like duck and amazons

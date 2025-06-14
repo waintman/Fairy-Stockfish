@@ -334,6 +334,11 @@ inline Bitboard between_bb(Square s1, Square s2, PieceType pt) {
 inline bool aligned(Square s1, Square s2, Square s3) { return line_bb(s1, s2) & s3; }
 
 #ifdef FAIRY_STOCKFISH
+constexpr Bitboard forward_ranks_bb(Color c, Square s) {
+  return c == WHITE ? (AllSquares ^ Rank1BB) << FILE_NB * relative_rank(WHITE, s, RANK_MAX)
+                    : (AllSquares ^ rank_bb(RANK_MAX)) >> FILE_NB * relative_rank(BLACK, s, RANK_MAX);
+}
+
 constexpr Bitboard forward_ranks_bb(Color c, Rank r) {
   return c == WHITE ? (AllSquares ^ Rank1BB) << FILE_NB * (r - RANK_1)
                     : (AllSquares ^ rank_bb(RANK_MAX)) >> FILE_NB * (RANK_MAX - r);
@@ -348,6 +353,12 @@ inline Bitboard zone_bb(Color c, Rank r, Rank maxRank) {
   return forward_ranks_bb(c, relative_rank(c, r, maxRank)) | rank_bb(relative_rank(c, r, maxRank));
 }
 
+/// forward_file_bb() returns a bitboard representing all the squares along the
+/// line in front of the given one, from the point of view of the given color.
+
+constexpr Bitboard forward_file_bb(Color c, Square s) {
+  return forward_ranks_bb(c, s) & file_bb(s);
+}
 #endif
 
 // distance() functions return the distance between x and y, defined as the
@@ -519,32 +530,28 @@ inline int popcount(Bitboard b) {
   return  PopCnt16[v.u[0]] + PopCnt16[v.u[1]] + PopCnt16[v.u[2]] + PopCnt16[v.u[3]]
         + PopCnt16[v.u[4]] + PopCnt16[v.u[5]] + PopCnt16[v.u[6]] + PopCnt16[v.u[7]];
 #else
-  union { Bitboard bb; uint16_t u[4]; } v = { b };
-  return PopCnt16[v.u[0]] + PopCnt16[v.u[1]] + PopCnt16[v.u[2]] + PopCnt16[v.u[3]];
-#endif
     union {
         Bitboard bb;
         uint16_t u[4];
     } v = {b};
     return PopCnt16[v.u[0]] + PopCnt16[v.u[1]] + PopCnt16[v.u[2]] + PopCnt16[v.u[3]];
+#endif
 
 #elif defined(_MSC_VER)
 
 #ifdef LARGEBOARDS
   return (int)_mm_popcnt_u64(uint64_t(b >> 64)) + (int)_mm_popcnt_u64(uint64_t(b));
 #else
-  return (int)_mm_popcnt_u64(b);
-#endif
     return int(_mm_popcnt_u64(b));
+#endif
 
 #else  // Assumed gcc or compatible compiler
 
 #ifdef LARGEBOARDS
   return __builtin_popcountll(b >> 64) + __builtin_popcountll(b);
 #else
-  return __builtin_popcountll(b);
-#endif
     return __builtin_popcountll(b);
+#endif
 
 #endif
 }

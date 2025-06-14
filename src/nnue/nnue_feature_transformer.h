@@ -613,7 +613,11 @@ class FeatureTransformer {
         auto& accumulator                 = pos.state()->*accPtr;
         accumulator.computed[Perspective] = true;
         FeatureSet::IndexList active;
+#ifndef FAIRY_STOCKFISH
         FeatureSet::append_active_indices<Perspective>(pos, active);
+#else
+        FeatureSet::append_active_indices(pos, Perspective, active);
+#endif
 
 #ifdef VECTOR
         for (IndexType j = 0; j < HalfDimensions / TileHeight; ++j)

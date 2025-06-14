@@ -119,8 +119,9 @@ class Position {
     Position& operator=(const Position&) = delete;
 
     // FEN string input/output
+#ifndef FAIRY_STOCKFISH
     Position&   set(const std::string& fenStr, bool isChess960, StateInfo* si);
-#ifdef FAIRY_STOCKFISH
+#else
     Position& set(const Variant* v, const std::string& fenStr, bool isChess960, StateInfo* si, bool sfen = false);
 #endif
     Position&   set(const std::string& code, Color c, StateInfo* si);
@@ -135,7 +136,6 @@ class Position {
     File max_file() const;
     int ranks() const;
     int files() const;
-    bool two_boards() const;
     Bitboard board_bb() const;
     Bitboard board_bb(Color c, PieceType pt) const;
     PieceSet piece_types() const;
@@ -152,7 +152,6 @@ class Position {
     bool mandatory_pawn_promotion() const;
     bool mandatory_piece_promotion() const;
     bool piece_demotion() const;
-    bool blast_on_capture() const;
     PieceSet blast_immune_types() const;
     PieceSet mutually_immune_types() const;
     EndgameEval endgame_eval() const;
@@ -190,8 +189,6 @@ class Position {
     PieceType drop_no_doubled() const;
     bool immobility_illegal() const;
     bool gating() const;
-    bool walling() const;
-    WallingRule walling_rule() const;
     bool seirawan_gating() const;
     bool cambodian_moves() const;
     Bitboard diagonal_lines() const;
@@ -292,6 +289,10 @@ class Position {
     Bitboard attackers_to(Square s) const;
 #ifdef FAIRY_STOCKFISH
     Bitboard attackers_to(Square s, Color c) const;
+    Bitboard attackers_to(Square s, Bitboard occupied, Color c) const;
+    Bitboard attackers_to(Square s, Bitboard occupied, Color c, Bitboard janggiCannons) const;
+    Bitboard attacks_from(Color c, PieceType pt, Square s) const;
+    Bitboard moves_from(Color c, PieceType pt, Square s) const;
 #endif
     Bitboard attackers_to(Square s, Bitboard occupied) const;
     void     update_slider_blockers(Color c) const;
@@ -327,10 +328,6 @@ class Position {
     void do_null_move(StateInfo& newSt, TranspositionTable& tt);
     void undo_null_move();
 
-    // Static Exchange Evaluation
-#ifdef FAIRY_STOCKFISH
-    Value blast_see(Move m) const;
-#endif
     bool see_ge(Move m, int threshold = 0) const;
 
     // Accessing hash keys
@@ -460,11 +457,6 @@ inline int Position::files() const {
     return var->maxFile + 1;
 }
 
-inline bool Position::two_boards() const {
-    assert(var != nullptr);
-    return var->twoBoards;
-}
-
 inline Bitboard Position::board_bb() const {
     assert(var != nullptr);
     return board_size_bb(var->maxFile, var->maxRank) & ~st->wallSquares;
@@ -544,11 +536,6 @@ inline bool Position::mandatory_piece_promotion() const {
 inline bool Position::piece_demotion() const {
     assert(var != nullptr);
     return var->pieceDemotion;
-}
-
-inline bool Position::blast_on_capture() const {
-    assert(var != nullptr);
-    return var->blastOnCapture;
 }
 
 inline PieceSet Position::blast_immune_types() const {
@@ -844,16 +831,6 @@ inline bool Position::gating() const {
     return var->gating;
 }
 
-inline bool Position::walling() const {
-    assert(var != nullptr);
-    return var->wallingRule != NO_WALLING;
-}
-
-inline WallingRule Position::walling_rule() const {
-    assert(var != nullptr);
-    return var->wallingRule;
-}
-
 inline bool Position::seirawan_gating() const {
     assert(var != nullptr);
     return var->seirawanGating;
@@ -919,8 +896,7 @@ inline Value Position::stalemate_value(int ply) const {
         while (pseudoRoyals)
         {
             Square sr = pop_lsb(pseudoRoyals);
-            if (  !(blast_on_capture() && (pseudoRoyalsTheirs & attacks_bb<KING>(sr)))
-                && attackers_to(sr, ~sideToMove))
+            if (attackers_to(sr, ~sideToMove))
                 return convert_mate_value(var->checkmateValue, ply);
         }
         // Look for duple check
@@ -932,8 +908,7 @@ inline Value Position::stalemate_value(int ply) const {
             {
                 Square sr = pop_lsb(pseudoRoyalCandidates);
                 // Touching pseudo-royal pieces are immune
-                if (!(  !(blast_on_capture() && (pseudoRoyalsTheirs & attacks_bb<KING>(sr)))
-                      && attackers_to(sr, ~sideToMove)))
+                if (!(attackers_to(sr, ~sideToMove)))
                     allCheck = false;
             }
             if (allCheck)
@@ -976,19 +951,7 @@ inline Value Position::checkmate_value(int ply) const {
         // Niol
         return VALUE_DRAW;
     }
-    // Checkmate using virtual pieces
-    if (two_boards() && var->checkmateValue < VALUE_ZERO)
-    {
-        Value virtualMaterial = VALUE_ZERO;
-        for (PieceSet ps = piece_types(); ps;)
-        {
-            PieceType pt = pop_lsb(ps);
-            virtualMaterial += std::max(-count_in_hand(~sideToMove, pt), 0) * PieceValue[MG][pt];
-        }
 
-        if (virtualMaterial > 0)
-            return -VALUE_VIRTUAL_MATE + virtualMaterial / 20 + ply;
-    }
     // Return mate value
     return convert_mate_value(var->checkmateValue, ply);
 }
@@ -1433,10 +1396,6 @@ inline bool Position::virtual_drop(Move m) const {
     return type_of(m) == DROP && !can_drop(side_to_move(), in_hand_piece_type(m));
 }
 
-
-inline Piece Position::captured_piece() const {
-    return st->capturedPiece;
-}
 #endif
 
 inline bool Position::is_chess960() const { return chess960; }
@@ -1564,7 +1523,6 @@ inline bool Position::bikjang() const {
 }
 
 inline bool Position::allow_virtual_drop(Color c, PieceType pt) const {
-    assert(two_boards());
     // Do we allow a virtual drop?
     return pt != KING && (   count_in_hand(c, PAWN) >= -(pt == PAWN)
                           && count_in_hand(c, KNIGHT) >= -(pt == PAWN)
@@ -1611,18 +1569,18 @@ inline void Position::add_to_hand(Piece pc) {
     if (variant()->freeDrops) return;
     pieceCountInHand[color_of(pc)][type_of(pc)]++;
     pieceCountInHand[color_of(pc)][ALL_PIECES]++;
-    psq += PSQT::psq[pc][SQ_NONE];
+    // psq += PSQT::psq[pc][SQ_NONE];
 }
 
 inline void Position::remove_from_hand(Piece pc) {
     if (variant()->freeDrops) return;
     pieceCountInHand[color_of(pc)][type_of(pc)]--;
     pieceCountInHand[color_of(pc)][ALL_PIECES]--;
-    psq -= PSQT::psq[pc][SQ_NONE];
+    // psq -= PSQT::psq[pc][SQ_NONE];
 }
 
 inline void Position::drop_piece(Piece pc_hand, Piece pc_drop, Square s) {
-    assert(can_drop(color_of(pc_hand), type_of(pc_hand)) || var->twoBoards);
+    assert(can_drop(color_of(pc_hand), type_of(pc_hand)));
     put_piece(pc_drop, s, pc_drop != pc_hand, pc_drop != pc_hand ? pc_hand : NO_PIECE);
     remove_from_hand(pc_hand);
     virtualPieces += (pieceCountInHand[color_of(pc_hand)][type_of(pc_hand)] < 0);
@@ -1633,7 +1591,7 @@ inline void Position::undrop_piece(Piece pc_hand, Square s) {
     remove_piece(s);
     board[s] = NO_PIECE;
     add_to_hand(pc_hand);
-    assert(can_drop(color_of(pc_hand), type_of(pc_hand)) || var->twoBoards);
+    assert(can_drop(color_of(pc_hand), type_of(pc_hand)));
 }
 
 inline bool Position::can_drop(Color c, PieceType pt) const {

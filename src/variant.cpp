@@ -490,99 +490,6 @@ namespace {
         v->petrifyOnCaptureTypes = piece_set(COMMONER) | QUEEN | ROOK | BISHOP | KNIGHT;
         return v;
     }
-    // Atomic chess without checks (ICC rules)
-    // https://www.chessclub.com/help/atomic
-    Variant* nocheckatomic_variant() {
-        Variant* v = chess_variant_base()->init();
-        v->variantTemplate = "atomic";
-        v->remove_piece(KING);
-        v->add_piece(COMMONER, 'k');
-        v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
-        v->extinctionValue = -VALUE_MATE;
-        v->extinctionPieceTypes = piece_set(COMMONER);
-        v->blastOnCapture = true;
-        v->nnueAlias = "atomic";
-        return v;
-    }
-    // Atomic chess
-    // https://en.wikipedia.org/wiki/Atomic_chess
-    Variant* atomic_variant() {
-        Variant* v = nocheckatomic_variant()->init();
-        v->extinctionPseudoRoyal = true;
-        v->endgameEval = EG_EVAL_ATOMIC;
-        return v;
-    }
-
-    // Atomar chess
-    // https://web.archive.org/web/20230519082613/https://chronatog.com/wp-content/uploads/2021/09/atomar-chess-rules.pdf
-    Variant* atomar_variant() {
-        Variant* v = nocheckatomic_variant()->init();
-        v->blastImmuneTypes = piece_set(COMMONER);
-        v->mutuallyImmuneTypes = piece_set(COMMONER);
-        return v;
-    }
-
-#ifdef ALLVARS
-    // Duck chess
-    // https://duckchess.com/
-    Variant* duck_variant() {
-        Variant* v = chess_variant_base()->init();
-        v->remove_piece(KING);
-        v->add_piece(COMMONER, 'k');
-        v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
-        v->extinctionValue = -VALUE_MATE;
-        v->extinctionPieceTypes = piece_set(COMMONER);
-        v->wallingRule = DUCK;
-        v->stalemateValue = VALUE_MATE;
-        v->endgameEval = EG_EVAL_DUCK;
-        return v;
-    }
-#endif
-
-    Variant* isolation_variant() { //https://boardgamegeek.com/boardgame/1875/isolation
-        Variant* v = chess_variant_base()->init();
-        v->maxRank = RANK_8;
-        v->maxFile = FILE_F;
-        v->reset_pieces();
-        v->add_piece(CUSTOM_PIECE_1, 'p', "mK"); //move as a King, but can't capture
-        v->startFen = "3p2/6/6/6/6/6/6/2P3 w - - 0 1";
-        v->stalemateValue = -VALUE_MATE;
-        v->wallingRule = STATIC;
-        v->wallingRegion[WHITE] = v->wallingRegion[BLACK] = AllSquares ^ make_bitboard(SQ_C1, SQ_D8);
-        return v;
-    }
-
-    Variant* isolation7x7_variant() {
-        Variant* v = isolation_variant()->init();
-        v->maxRank = RANK_7;
-        v->maxFile = FILE_G;
-        v->startFen = "3p3/7/7/7/7/7/3P3 w - - 0 1";
-        v->wallingRegion[WHITE] = v->wallingRegion[BLACK] = AllSquares ^ make_bitboard(SQ_D1, SQ_D7);
-        return v;
-    }
-
-    Variant* snailtrail_variant() { //https://boardgamegeek.com/boardgame/37135/snailtrail
-        Variant* v = chess_variant_base()->init();
-        v->maxRank = RANK_7;
-        v->maxFile = FILE_G;
-        v->reset_pieces();
-        v->add_piece(CUSTOM_PIECE_1, 'p', "mK"); //move as a King, but can't capture
-        v->startFen = "6p/7/7/7/7/7/P6 w - - 0 1";
-        v->stalemateValue = -VALUE_MATE;
-        v->wallingRule = PAST;
-        return v;
-    }
-
-    Variant* joust_variant() { //https://www.chessvariants.com/programs.dir/joust.html
-        //This page mainly describes a variant where position on home row is randomized, but also a variant where they start in the centre(implemented here)
-        Variant* v = chess_variant_base()->init();
-        v->reset_pieces();
-        v->add_piece(CUSTOM_PIECE_1, 'n', "mN"); //move as a Knight, but can't capture
-        v->startFen = "8/8/8/4n3/3N4/8/8/8 w - - 0 1";
-        v->stalemateValue = -VALUE_MATE;
-        v->wallingRule = PAST;
-        return v;
-    }
 
     Variant* fox_and_hounds_variant() { //https://boardgamegeek.com/boardgame/148180/fox-and-hounds
         Variant* v = chess_variant_base()->init();
@@ -642,31 +549,7 @@ namespace {
         v->nnueAlias = "crazyhouse";
         return v;
     }
-    // Bughouse
-    // A four player variant where captured pieces are introduced on the other board
-    // https://en.wikipedia.org/wiki/Bughouse_chess
-    Variant* bughouse_variant() {
-        Variant* v = crazyhouse_variant()->init();
-        v->variantTemplate = "bughouse";
-        v->twoBoards = true;
-        v->capturesToHand = false;
-        v->stalemateValue = -VALUE_MATE;
-        return v;
-    }
-    // Koedem (Bughouse variant)
-    // http://schachclub-oetigheim.de/wp-content/uploads/2016/04/Koedem-rules.pdf
-    Variant* koedem_variant() {
-        Variant* v = bughouse_variant()->init();
-        v->remove_piece(KING);
-        v->add_piece(COMMONER, 'k');
-        v->castlingKingPiece[WHITE] = v->castlingKingPiece[BLACK] = COMMONER;
-        v->mustDrop = true;
-        v->mustDropType = COMMONER;
-        v->extinctionValue = -VALUE_MATE;
-        v->extinctionPieceTypes = piece_set(COMMONER);
-        v->extinctionOpponentPieceCount = 2; // own all kings/commoners
-        return v;
-    }
+
     // Pocket Knight chess
     // Each player has an additional knight in hand which can be dropped at any move
     // https://www.chessvariants.com/other.dir/pocket.html
@@ -1681,22 +1564,7 @@ namespace {
         v->enclosingDropStart = make_bitboard(SQ_E5, SQ_F5, SQ_E6, SQ_F6);
         return v;
     }
-#ifdef ALLVARS
-    // Game of the Amazons
-    // https://en.wikipedia.org/wiki/Game_of_the_Amazons
-    Variant* amazons_variant() {
-        Variant* v = chess_variant_base()->init();
-        v->pieceToCharTable = "....Q.....................q.................";
-        v->maxRank = RANK_10;
-        v->maxFile = FILE_J;
-        v->reset_pieces();
-        v->add_piece(CUSTOM_PIECE_1, 'q', "mQ");
-        v->startFen = "3q2q3/10/10/q8q/10/10/Q8Q/10/10/3Q2Q3 w - - 0 1";
-        v->stalemateValue = -VALUE_MATE;
-        v->wallingRule = ARROW;
-        return v;
-    }
-#endif
+
     // Xiangqi (Chinese chess)
     // https://en.wikipedia.org/wiki/Xiangqi
     // Xiangqi base variant for inheriting rules without chasing rules
@@ -1732,43 +1600,36 @@ namespace {
         v->startFen = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/9/9/M1BAKAB2 w - - 0 1";
         return v;
     }
-    // Supply chess
-    // https://en.wikipedia.org/wiki/Xiangqi#Variations
-    Variant* supply_variant() {
-        Variant* v = xiangqi_variant_base()->init();
-        v->variantTemplate = "bughouse";
-        v->startFen = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR[] w - - 0 1";
-        v->twoBoards = true;
-        v->pieceDrops = true;
-        v->dropChecks = false;
-        v->whiteDropRegion = v->mobilityRegion[WHITE][ELEPHANT];
-        v->blackDropRegion = v->mobilityRegion[BLACK][ELEPHANT];
-        v->mobilityRegion[WHITE][FERS] = make_bitboard(SQ_D1, SQ_F1, SQ_E2, SQ_D3, SQ_F3);
-        v->mobilityRegion[BLACK][FERS] = make_bitboard(SQ_D8, SQ_F8, SQ_E9, SQ_D10, SQ_F10);
-        v->mobilityRegion[WHITE][ELEPHANT] = make_bitboard(SQ_C1, SQ_G1, SQ_A3, SQ_E3, SQ_I3, SQ_C5, SQ_G5);
-        v->mobilityRegion[BLACK][ELEPHANT] = make_bitboard(SQ_C6, SQ_G6, SQ_A8, SQ_E8, SQ_I8, SQ_C10, SQ_G10);
-        v->mobilityRegion[WHITE][SOLDIER] = Rank6BB | Rank7BB | Rank8BB | Rank9BB | Rank10BB |
-            make_bitboard(SQ_A4, SQ_A5, SQ_C4, SQ_C5, SQ_E4, SQ_E5, SQ_G4, SQ_G5, SQ_I4, SQ_I5);
-        v->mobilityRegion[BLACK][SOLDIER] = Rank1BB | Rank2BB | Rank3BB | Rank4BB | Rank5BB |
-            make_bitboard(SQ_A6, SQ_A7, SQ_C6, SQ_C7, SQ_E6, SQ_E7, SQ_G6, SQ_G7, SQ_I6, SQ_I7);
-        return v;
-    }
+
     // Janggi (Korean chess)
     // https://en.wikipedia.org/wiki/Janggi
     // Official tournament rules with bikjang and material counting.
     Variant* janggi_variant() {
-        Variant* v = xiangqi_variant_base()->init();
-        v->variantTemplate = "janggi";
-        v->pieceToCharTable = ".N.R.AB.P..C.........K.n.r.ab.p..c.........k";
-        v->remove_piece(FERS);
-        v->remove_piece(CANNON);
-        v->remove_piece(ELEPHANT);
+        Variant* v = new Variant();
+        v->reset_pieces();
+        v->add_piece(ROOK, 'r');
+        v->add_piece(HORSE, 'n', 'h');
+        v->add_piece(KING, 'k');
+        v->add_piece(SOLDIER, 'p');
         v->add_piece(WAZIR, 'a');
         v->add_piece(JANGGI_CANNON, 'c');
         v->add_piece(JANGGI_ELEPHANT, 'b', 'e');
+        
+        v->variantTemplate = "janggi";
+        v->pieceToCharTable = ".N.R.AB.P..C.........K.n.r.ab.p..c.........k";
         v->startFen = "rnba1abnr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RNBA1ABNR w - - 0 1";
+
+        v->kingType = WAZIR;
+        v->doubleStep = false;
+        v->castling = false;
+        v->stalemateValue = -VALUE_MATE;
+        v->maxRank = RANK_10;
+        v->maxFile = FILE_I;
+        v->mobilityRegion[WHITE][KING] = (Rank1BB | Rank2BB | Rank3BB) & (FileDBB | FileEBB | FileFBB);
+        v->mobilityRegion[BLACK][KING] = (Rank8BB | Rank9BB | Rank10BB) & (FileDBB | FileEBB | FileFBB);
         v->mobilityRegion[WHITE][WAZIR] = v->mobilityRegion[WHITE][KING];
         v->mobilityRegion[BLACK][WAZIR] = v->mobilityRegion[BLACK][KING];
+        
         v->soldierPromotionRank = RANK_1;
         v->flyingGeneral = false;
         v->bikjangRule = true;
@@ -1929,9 +1790,6 @@ Variant* Variant::conclude() {
         if (pieceToChar.find(token) != std::string::npos || pieceToCharSynonyms.find(token) != std::string::npos)
             nnueMaxPieces++;
     }
-    if (twoBoards)
-        nnueMaxPieces *= 2;
-
     // For endgame evaluation to be applicable, no special win rules must apply.
     // Furthermore, rules significantly changing game mechanics also invalidate it.
     endgameEval =  endgameEval != EG_EVAL_CHESS
@@ -1946,10 +1804,8 @@ Variant* Variant::conclude() {
                     && !checkCounting
                     && !makpongRule
                     && !connectN
-                    && !blastOnCapture
                     && !petrifyOnCaptureTypes
                     && !capturesToHand
-                    && !twoBoards
                     && !restrictedMobility
                     && kingType == KING
                    )

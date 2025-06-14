@@ -30,6 +30,7 @@
 
 #include "misc.h"
 #ifdef FAIRY_STOCKFISH
+#include "uci.h"
 #include "piece.h"
 #include "variant.h"
 #endif
@@ -44,119 +45,32 @@ namespace PSQT {
   void init(const Variant* v);
 }
 
-// standard variants of XBoard/WinBoard
-std::set<std::string> standard_variants = {
-    "normal", "nocastle", "fischerandom", "knightmate", "3check", "makruk", "shatranj",
-    "asean", "seirawan", "crazyhouse", "bughouse", "suicide", "giveaway", "losers", "atomic",
-    "capablanca", "gothic", "janus", "caparandom", "grand", "shogi", "xiangqi", "duck",
-    "berolina", "spartan"
-};
-
-/// 'On change' actions, triggered by an option's value change
-static void on_clear_hash(const Option&) { Search::clear(); }
-static void on_hash_size(const Option& o) { TT.resize(size_t(o)); }
-static void on_logger(const Option& o) { start_logger(o); }
-static void on_threads(const Option& o) { Threads.set(size_t(o)); }
-static void on_tb_path(const Option& o) { Tablebases::init(o); }
-static void on_use_NNUE(const Option&) { Eval::NNUE::init(); }
-static void on_eval_file(const Option&) { Eval::NNUE::init(); }
-
-void on_variant_path(const Option& o) {
-    std::stringstream ss((std::string)o);
-    std::string path;
-
-    while (std::getline(ss, path, SepChar))
-        variants.parse<false>(path);
-
-    Options["UCI_Variant"].set_combo(variants.get_keys());
+std::string option_name(std::string name) {
+  if (CurrentProtocol == UCCI && name == "Hash")
+      return "hashsize";
+  if (CurrentProtocol == USI)
+  {
+      if (name == "Hash" || name == "Ponder" || name == "MultiPV")
+          return "USI_" + name;
+      if (name.substr(0, 4) == "UCI_")
+          name = "USI_" + name.substr(4);
+  }
+  if (CurrentProtocol == UCCI || CurrentProtocol == USI)
+      std::replace(name.begin(), name.end(), ' ', '_');
+  return name;
 }
-void on_variant_set(const Option &o) {
-    // Re-initialize NNUE
-    Eval::NNUE::init();
 
-    const Variant* v = variants.find(o)->second;
-    init_variant(v);
-    PSQT::init(v);
-}
-void on_variant_change(const Option &o) {
-    // Variant initialization
-    on_variant_set(o);
-
-    const Variant* v = variants.find(o)->second;
-    // Do not send setup command for known variants
-    if (standard_variants.find(o) != standard_variants.end())
-        return;
-    int pocketsize = v->pieceDrops ? (v->pocketSize ? v->pocketSize : popcount(v->pieceTypes)) : 0;
-    if (CurrentProtocol == XBOARD)
-    {
-        // Overwrite setup command for Janggi variants
-        auto itJanggi = variants.find("janggi");
-        if (   itJanggi != variants.end()
-            && v->variantTemplate == itJanggi->second->variantTemplate
-            && v->startFen == itJanggi->second->startFen
-            && v->pieceToCharTable == itJanggi->second->pieceToCharTable)
-        {
-            sync_cout << "setup (PH.R.AE..K.C.ph.r.ae..k.c.) 9x10+0_janggi "
-                      << "rhea1aehr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RHEA1AEHR w - - 0 1"
-                      << sync_endl;
-            return;
-        }
-        // Send setup command
-        sync_cout << "setup (" << v->pieceToCharTable << ") "
-                  << v->maxFile + 1 << "x" << v->maxRank + 1
-                  << "+" << pocketsize << "_" << v->variantTemplate
-                  << " " << v->startFen
-                  << sync_endl;
-        // Send piece command with Betza notation
-        // https://www.gnu.org/software/xboard/Betza.html
-        for (PieceSet ps = v->pieceTypes; ps;)
-        {
-            PieceType pt = pop_lsb(ps);
-            string suffix =   pt == PAWN && v->doubleStep     ? "ifmnD"
-                            : pt == KING && v->cambodianMoves ? "ismN"
-                            : pt == FERS && v->cambodianMoves ? "ifD"
-                                                              : "";
-            // Janggi palace moves
-            if (v->diagonalLines)
-            {
-                PieceType pt2 = pt == KING ? v->kingType : pt;
-                if (pt2 == WAZIR)
-                    suffix += "F";
-                else if (pt2 == SOLDIER)
-                    suffix += "fF";
-                else if (pt2 == ROOK)
-                    suffix += "B";
-                else if (pt2 == JANGGI_CANNON)
-                    suffix += "pB";
-            }
-            // Castling
-            if (pt == KING && v->castling)
-                 suffix += "O" + std::to_string((v->castlingKingsideFile - v->castlingQueensideFile) / 2);
-            // Drop region
-            if (v->pieceDrops)
-            {
-                if (pt == PAWN && !v->firstRankPawnDrops)
-                    suffix += "j";
-                else if (pt == v->dropNoDoubled)
-                    suffix += std::string(v->dropNoDoubledCount, 'f');
-                else if (pt == BISHOP && v->dropOppositeColoredBishop)
-                    suffix += "s";
-                suffix += "@" + std::to_string(pt == PAWN && !v->promotionZonePawnDrops && v->promotionRegion[WHITE] ? rank_of(lsb(v->promotionRegion[WHITE])) : v->maxRank + 1);
-            }
-            sync_cout << "piece " << v->pieceToChar[pt] << "& " << pieceMap.find(pt == KING ? v->kingType : pt)->second->betza << suffix << sync_endl;
-            PieceType promType = v->promotedPieceType[pt];
-            if (promType)
-                sync_cout << "piece +" << v->pieceToChar[pt] << "& " << pieceMap.find(promType)->second->betza << sync_endl;
-        }
-    }
-    else
-        sync_cout << "info string variant " << (std::string)o
-                << " files " << v->maxFile + 1
-                << " ranks " << v->maxRank + 1
-                << " pocket " << pocketsize
-                << " template " << v->variantTemplate
-                << " startpos " << v->startFen
-                << sync_endl;
+bool is_valid_option(std::map<std::string, Option, CaseInsensitiveLess>& options, std::string& name) {
+  for (const auto& it : options)
+  {
+      std::string optionName = option_name(it.first);
+      if (!options.key_comp()(optionName, name) && !options.key_comp()(name, optionName))
+      {
+          name = it.first;
+          return true;
+      }
+  }
+  return false;
 }
 
 #endif
@@ -187,12 +101,12 @@ void OptionsMap::setoption(std::istringstream& is) {
         value += (value.empty() ? "" : " ") + token;
 
     if (options_map.count(name))
-#ifdef FAIRY_STOCKFISH
         options_map[name] = value;
+#ifdef FAIRY_STOCKFISH
     // Deal with option name aliases in UCI dialects
     else if (is_valid_option(options_map, name))
-#endif
         options_map[name] = value;
+#endif
     else
         sync_cout << "No such option: " << name << sync_endl;
 }
@@ -332,54 +246,12 @@ void Option::set_combo(std::vector<std::string> newComboValues) {
     comboValues = newComboValues;
 }
 
-void Option::set_default(std::string newDefault) {
-    defaultValue = currentValue = newDefault;
-
-    // When changing the variant default, suppress variant definition output,
-    // but still do the essential re-initialization of the variant
-    if (on_change)
-        (on_change == on_variant_change ? on_variant_set : on_change)(*this);
-}
-
 const std::string Option::get_type() const {
     return type;
 }
 #endif
 
 std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
-#ifdef FAIRY_STOCKFISH
-
-  if (CurrentProtocol == XBOARD)
-  {
-      for (size_t idx = 0; idx < om.size(); ++idx)
-          for (const auto& it : om)
-              if (it.second.idx == idx && it.first != "UCI_Variant" && it.first != "Threads" && it.first != "Hash")
-              {
-                  const Option& o = it.second;
-                  os << "\nfeature option=\"" << it.first << " -" << o.type;
-
-                  if (o.type == "string" || o.type == "combo")
-                      os << " " << o.defaultValue;
-                  else if (o.type == "check")
-                      os << " " << int(o.defaultValue == "true");
-
-                  if (o.type == "combo")
-                      for (string value : o.comboValues)
-                          if (value != o.defaultValue)
-                              os << " /// " << value;
-
-                  if (o.type == "spin")
-                      os << " " << int(stof(o.defaultValue))
-                         << " " << o.min
-                         << " " << o.max;
-
-                  os << "\"";
-
-                  break;
-              }
-  }
-  else
-#endif
     for (size_t idx = 0; idx < om.options_map.size(); ++idx)
         for (const auto& it : om.options_map)
             if (it.second.idx == idx)

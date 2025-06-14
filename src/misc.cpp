@@ -78,7 +78,7 @@ namespace {
 #ifndef FAIRY_STOCKFISH
 constexpr std::string_view version = "16.1";
 #else
-const string version = "";
+const std::string version = "";
 #endif
 
 // Our fancy logging facility. The trick here is to replace cin.rdbuf() and
@@ -164,13 +164,13 @@ class Logger {
 #ifndef FAIRY_STOCKFISH
 std::string engine_info(bool to_uci) {
 #else
-string engine_info(bool to_uci, bool to_xboard) {
+std::string engine_info(bool to_uci, bool to_xboard) {
 #endif
     std::stringstream ss;
 #ifndef FAIRY_STOCKFISH
     ss << "Stockfish " << version << std::setfill('0');
 #else
-  ss << "Fairy-Stockfish " << version << setfill('0');
+  ss << "Fairy-Stockfish " << version << std::setfill('0');
 #endif
 
 #ifndef FAIRY_STOCKFISH

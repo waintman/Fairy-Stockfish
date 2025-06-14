@@ -26,6 +26,9 @@
 #include "types.h"
 #include "uci.h"
 
+#ifdef FAIRY_STOCKFISH
+#include "variant.h"
+#endif
 namespace Stockfish {
 
 // Utility to verify move generation. All the leaf nodes up
@@ -42,7 +45,7 @@ uint64_t perft(Position& pos, Depth depth) {
     for (const auto& m : MoveList<LEGAL>(pos))
     {
 #ifdef FAIRY_STOCKFISH
-        assert(pos.pseudo_legal(m))
+        assert(pos.pseudo_legal(m));
 #endif
         if (Root && depth <= 1)
             cnt = 1, nodes++;
@@ -57,7 +60,7 @@ uint64_t perft(Position& pos, Depth depth) {
 #ifndef FAIRY_STOCKFISH
             sync_cout << UCI::move(m, pos.is_chess960()) << ": " << cnt << sync_endl;
 #else
-            sync_cout << UCI::move(m, pos) << ": " << cnt << sync_endl;
+            sync_cout << UCI::move(pos, m) << ": " << cnt << sync_endl;
 #endif
     }
     return nodes;
@@ -66,7 +69,11 @@ uint64_t perft(Position& pos, Depth depth) {
 inline void perft(const std::string& fen, Depth depth, bool isChess960) {
     StateListPtr states(new std::deque<StateInfo>(1));
     Position     p;
+#ifndef FAIRY_STOCKFISH
     p.set(fen, isChess960, &states->back());
+#else
+    p.set(p.variant(), fen, isChess960, &states->back());
+#endif
 
     uint64_t nodes = perft<true>(p, depth);
     sync_cout << "\nNodes searched: " << nodes << "\n" << sync_endl;

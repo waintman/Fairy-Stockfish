@@ -34,9 +34,6 @@
 #include "misc.h"
 #include "movegen.h"
 #include "movepick.h"
-#ifdef FAIRY_STOCKFISH
-#include "partner.h"
-#endif
 #include "nnue/evaluate_nnue.h"
 #include "nnue/nnue_common.h"
 #include "position.h"
@@ -45,9 +42,6 @@
 #include "timeman.h"
 #include "tt.h"
 #include "uci.h"
-#ifdef FAIRY_STOCKFISH
-#include "xboard.h"
-#endif
 #include "ucioption.h"
 
 namespace Stockfish {
@@ -66,15 +60,9 @@ Value futility_margin(Depth d, bool noTtCutNode, bool improving) {
     return (futilityMult * d - 3 * futilityMult / 2 * improving);
 }
 
-#ifndef FAIRY_STOCKFISH
 constexpr int futility_move_count(bool improving, Depth depth) {
     return improving ? (3 + depth * depth) : (3 + depth * depth) / 2;
 }
-#else
-constexpr int futility_move_count(bool improving, Depth depth, const Position& pos) {
-    return improving ? (3 + depth * depath * (1 + pos.walling()) + 2 * pos.blast_on_capture()) / (1 + pos.blast_on_capture()) : (3 + depth * depath * (1 + pos.walling()) + 2 * pos.blast_on_capture()) / (2 + pos.blast_on_capture());
-}
-#endif
 
 // Add correctionHistory value to raw staticEval and guarantee evaluation does not hit the tablebase range
 Value to_corrected_static_eval(Value v, const Worker& w, const Position& pos) {
@@ -215,15 +203,7 @@ void Search::Worker::start_searching() {
         threads.start_searching();  // start non-main threads
         iterative_deepening();      // main thread start searching
     }
-#ifdef FAIRY_STOCKFISH
 
-    // Sit in bughouse variants if partner requested it or we are dead
-    if (rootPos.two_boards() && !Threads.abort && CurrentProtocol == XBOARD)
-    {
-        while (!Threads.stop && (Partner.sitRequested || (Partner.weDead && !Partner.partnerDead)) && Time.elapsed() < Limits.time[us] - 1000)
-        {}
-    }
-#endif
     // When we reach the maximum depth, we can arrive here without a raise of
     // threads.stop. However, if we are pondering or in an infinite search,
     // the UCI protocol states that we shouldn't print the best move before the
@@ -264,48 +244,7 @@ void Search::Worker::start_searching() {
 #ifndef FAIRY_STOCKFISH
     sync_cout << "bestmove " << UCI::move(bestThread->rootMoves[0].pv[0], rootPos.is_chess960());
 #else
-  if (CurrentProtocol == XBOARD)
-  {
-      Move bestMove = bestThread->rootMoves[0].pv[0];
-      // Wait for virtual drop to become real
-      if (rootPos.two_boards() && rootPos.virtual_drop(bestMove))
-      {
-          Partner.ptell("fast");
-          while (!Threads.abort && !Partner.partnerDead && !Partner.fast && Limits.time[us] - Time.elapsed() > Partner.opptime)
-          {}
-          Partner.ptell("x");
-          // Find best real move
-          for (const auto& m : this->rootMoves)
-              if (!rootPos.virtual_drop(m.pv[0]))
-              {
-                  bestMove = m.pv[0];
-                  break;
-              }
-      }
-      // Send move only when not in analyze mode and not at game end
-      if (!Limits.infinite && !ponder && rootMoves[0].pv[0] != MOVE_NONE && !Threads.abort.exchange(true))
-      {
-          std::string move = UCI::move(rootPos, bestMove);
-          if (rootPos.walling())
-          {
-              sync_cout << "move " << move.substr(0, move.find(",")) << "," << sync_endl;
-              sync_cout << "move " << move.substr(move.find(",") + 1) << sync_endl;
-          }
-          else
-              sync_cout << "move " << UCI::move(rootPos, bestMove) << sync_endl;
-          if (XBoard::stateMachine->moveAfterSearch)
-          {
-              XBoard::stateMachine->do_move(bestMove);
-              XBoard::stateMachine->moveAfterSearch = false;
-              if (Options["Ponder"] && (   bestThread->rootMoves[0].pv.size() > 1
-                                        || bestThread->rootMoves[0].extract_ponder_from_tt(rootPos)))
-                  XBoard::stateMachine->ponderMove = bestThread->rootMoves[0].pv[1];
-          }
-      }
-      return;
-  }
-
-  sync_cout << "bestmove " << UCI::move(rootPos, bestThread->rootMoves[0].pv[0]);
+    sync_cout << "bestmove " << UCI::move(rootPos, bestThread->rootMoves[0].pv[0]);
 #endif
 
     if (bestThread->rootMoves[0].pv.size() > 1
@@ -537,9 +476,11 @@ void Search::Worker::iterative_deepening() {
         // Do we have time for the next iteration? Can we stop searching now?
         if (limits.use_time_management() && !threads.stop && !mainThread->stopOnPonderhit)
         {
+#ifndef FAIRY_STOCKFISH
             auto bestmove    = rootMoves[0].pv[0];
             int  nodesEffort = effort[bestmove.from_sq()][bestmove.to_sq()] * 100
                             / std::max(size_t(1), size_t(nodes));
+#endif
 
             double fallingEval = (66 + 14 * (mainThread->bestPreviousAverageScore - bestValue)
                                   + 6 * (mainThread->iterValue[iterIdx] - bestValue))
@@ -565,74 +506,6 @@ void Search::Worker::iterative_deepening() {
             {
                 threads.stop = true;
             }
-#else
-          // Update partner in bughouse variants
-          if (completedDepth >= 8 && rootPos.two_boards() && CurrentProtocol == XBOARD)
-          {
-              // Communicate clock times relevant for sitting decisions
-              if (Limits.time[us])
-                  Partner.ptell<FAIRY>("time " + std::to_string((Limits.time[us] - Time.elapsed()) / 10));
-              if (Limits.time[~us])
-                  Partner.ptell<FAIRY>("otim " + std::to_string(Limits.time[~us] / 10));
-              // We are dead and need to sit
-              if (!Partner.weDead && bestValue <= VALUE_MATED_IN_MAX_PLY)
-              {
-                  Partner.ptell("dead");
-                  Partner.weDead = true;
-              }
-              // We were dead but are fine again
-              else if (Partner.weDead && bestValue > VALUE_MATED_IN_MAX_PLY)
-              {
-                  Partner.ptell("x");
-                  Partner.weDead = false;
-              }
-              // We win by force, so partner should sit
-              else if (!Partner.weWin && bestValue >= VALUE_MATE_IN_MAX_PLY && Limits.time[~us] < Partner.time)
-              {
-                  Partner.ptell("sit");
-                  Partner.weWin = true;
-              }
-              // We are no longer winning
-              else if (Partner.weWin && (bestValue < VALUE_MATE_IN_MAX_PLY || Limits.time[~us] > Partner.time))
-              {
-                  Partner.ptell("x");
-                  Partner.weWin = false;
-              }
-              // We can win if partner delivers required material quickly
-              else if (  !Partner.weVirtualWin
-                       && bestValue >= VALUE_VIRTUAL_MATE_IN_MAX_PLY
-                       && bestValue <= VALUE_VIRTUAL_MATE
-                       && Limits.time[us] - Time.elapsed() > Partner.opptime)
-              {
-                  Partner.ptell("fast");
-                  Partner.weVirtualWin = true;
-              }
-              // Virtual mate is gone
-              else if (   Partner.weVirtualWin
-                       && (bestValue < VALUE_VIRTUAL_MATE_IN_MAX_PLY || bestValue > VALUE_VIRTUAL_MATE || Limits.time[us] - Time.elapsed() < Partner.opptime))
-              {
-                  Partner.ptell("slow");
-                  Partner.weVirtualWin = false;
-              }
-              // We need to survive a virtual mate and play fast
-              else if (  !Partner.weVirtualLoss
-                       && (bestValue <= -VALUE_VIRTUAL_MATE_IN_MAX_PLY && bestValue >= -VALUE_VIRTUAL_MATE)
-                       && Limits.time[~us] > Partner.time)
-              {
-                  Partner.ptell("sit");
-                  Partner.weVirtualLoss = true;
-                  Partner.fast = true;
-              }
-              // Virtual mate threat is over
-              else if (   Partner.weVirtualLoss
-                       && (bestValue > -VALUE_VIRTUAL_MATE_IN_MAX_PLY || bestValue < -VALUE_VIRTUAL_MATE || Limits.time[~us] < Partner.time))
-              {
-                  Partner.ptell("x");
-                  Partner.weVirtualLoss = false;
-                  Partner.fast = false;
-              }
-          }
-
 #endif
 
             // Stop the search if we have exceeded the totalTime
@@ -642,11 +515,7 @@ void Search::Worker::iterative_deepening() {
                 // keep pondering until the GUI sends "ponderhit" or "stop".
                 if (mainThread->ponder)
                     mainThread->stopOnPonderhit = true;
-#ifndef FAIRY_STOCKFISH
                 else
-#else
-                else if (!(rootPos.two_boards() && (Partner.sitRequested || Partner.weDead)))
-#endif
                     threads.stop = true;
             }
             else if (!mainThread->ponder
@@ -1001,7 +870,7 @@ Value Search::Worker::search(
 #ifndef FAIRY_STOCKFISH
         Depth R = std::min(int(eval - beta) / 154, 6) + depth / 3 + 4;
 #else
-        Depth R = std::min(int(eval - beta) / 154, pos.must_capture() || pos.blast_on_capture() ? 0 : 6) + depth / 3 + 4;
+        Depth R = std::min(int(eval - beta) / 154, pos.must_capture() ? 0 : 6) + depth / 3 + 4;
 #endif
 
         ss->currentMove         = Move::null();
@@ -1212,11 +1081,7 @@ moves_loop:  // When in check, search starts here
         {
             // Skip quiet moves if movecount exceeds our FutilityMoveCount threshold (~8 Elo)
             if (!moveCountPruning)
-#ifndef FAIRY_STOCKFISH
                 moveCountPruning = moveCount >= futility_move_count(improving, depth);
-#else
-                moveCountPruning = moveCount >= futility_move_count(improving, depth, pos);
-#endif
 
             // Reduced depth of the next LMR search
             int lmrDepth = newDepth - r;
@@ -1228,6 +1093,7 @@ moves_loop:  // When in check, search starts here
 #endif
             if (capture || givesCheck)
             {
+#ifndef FAIRY_STOCKFISH
                 // Futility pruning for captures (~2 Elo)
                 if (!givesCheck && lmrDepth < 7 && !ss->inCheck)
                 {
@@ -1239,6 +1105,12 @@ moves_loop:  // When in check, search starts here
                     if (futilityEval < alpha)
                         continue;
                 }
+#else
+                if (   !givesCheck
+                    && lmrDepth < 1
+                    && captureHistory[movedPiece][to_sq(move)][type_of(pos.piece_on(to_sq(move)))] < 0)
+                    continue;
+#endif
 
                 // SEE based pruning for captures and checks (~11 Elo)
 #ifndef FAIRY_STOCKFISH
@@ -1823,7 +1695,11 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta,
                 if (moveCount > 2)
                     continue;
 
+#ifndef FAIRY_STOCKFISH
                 futilityValue = futilityBase + PieceValue[pos.piece_on(move.to_sq())];
+#else
+                futilityValue = futilityBase + PieceValue[EG][pos.piece_on(to_sq(move))];
+#endif
 
                 // If static eval + value of piece we are going to capture is much lower
                 // than alpha we can prune this move. (~2 Elo)
@@ -2045,14 +1921,7 @@ void update_all_stats(const Position& pos,
                 .pawnHistory[pIndex][pos.moved_piece(quietsSearched[i])][quietsSearched[i].to_sq()]
               << -quietMoveMalus;
 
-#ifdef FAIRY_STOCKFISH
-            if (!(pos.walling() && from_to(quietsSearched[i]) == from_to(bestMove)))
-#endif
             workerThread.mainHistory[us][quietsSearched[i].from_to()] << -quietMoveMalus;
-#ifdef FAIRY_STOCKFISH
-            if (pos.walling())
-                thisThread->gateHistory[us][gating_square(quietsSearched[i])] << -bonus2;
-#endif
             update_continuation_histories(ss, pos.moved_piece(quietsSearched[i]),
                                           quietsSearched[i].to_sq(), -quietMoveMalus);
         }
@@ -2062,10 +1931,6 @@ void update_all_stats(const Position& pos,
         // Increase stats for the best move in case it was a capture move
         captured = type_of(pos.piece_on(bestMove.to_sq()));
         captureHistory[moved_piece][bestMove.to_sq()][captured] << quietMoveBonus;
-#ifdef FAIRY_STOCKFISH
-        if (pos.walling())
-            thisThread->gateHistory[us][gating_square(bestMove)] << bonus1;
-#endif
     }
 
     // Extra penalty for a quiet early move that was not a TT move or
@@ -2081,14 +1946,7 @@ void update_all_stats(const Position& pos,
     {
         moved_piece = pos.moved_piece(capturesSearched[i]);
         captured    = type_of(pos.piece_on(capturesSearched[i].to_sq()));
-#ifdef FAIRY_STOCKFISH
-        if (!(pos.walling() && from_to(capturesSearched[i]) == from_to(bestMove)))
-#endif
         captureHistory[moved_piece][capturesSearched[i].to_sq()][captured] << -quietMoveMalus;
-#ifdef FAIRY_STOCKFISH
-        if (pos.walling())
-            thisThread->gateHistory[us][gating_square(capturesSearched[i])] << -bonus1;
-#endif
     }
 }
 
@@ -2125,10 +1983,6 @@ void update_quiet_stats(
 
     Color us = pos.side_to_move();
     workerThread.mainHistory[us][move.from_to()] << bonus;
-#ifdef FAIRY_STOCKFISH
-    if (pos.walling())
-        thisThread->gateHistory[us][gating_square(move)] << bonus;
-#endif
     update_continuation_histories(ss, pos.moved_piece(move), move.to_sq(), bonus);
 
     // Update countermove history
@@ -2147,7 +2001,11 @@ Move Skill::pick_best(const RootMoves& rootMoves, size_t multiPV) {
 
     // RootMoves are already sorted by score in descending order
     Value  topScore = rootMoves[0].score;
+#ifndef FAIRY_STOCKFISH
     int    delta    = std::min(topScore - rootMoves[multiPV - 1].score, int(PawnValue));
+#else
+    int    delta    = std::min(topScore - rootMoves[multiPV - 1].score, int(PawnValueMg));
+#endif
     int    maxScore = -VALUE_INFINITE;
     double weakness = 120 - 2 * level;
 
@@ -2196,14 +2054,6 @@ void SearchManager::check_time(Search::Worker& worker) {
     if (ponder)
         return;
 
-#ifdef FAIRY_STOCKFISH
-  if (   rootPos.two_boards()
-      && Time.elapsed() < Limits.time[rootPos.side_to_move()] - 1000
-      && (Partner.sitRequested || (Partner.weDead && !Partner.partnerDead) || Partner.weVirtualWin))
-      return;
-
-#endif
-
     if (
       // Later we rely on the fact that we can at least use the mainthread previous
       // root-search score and PV in a multithreaded environment to prove mated-in scores.
@@ -2247,25 +2097,6 @@ std::string SearchManager::pv(const Search::Worker&     worker,
         if (ss.rdbuf()->in_avail())  // Not at first line
             ss << "\n";
 
-#ifdef FAIRY_STOCKFISH
-        if (CurrentProtocol == XBOARD)
-        {
-            ss << d << " "
-                << UCI::value(v) << " "
-                << elapsed / 10 << " "
-                << nodesSearched << " "
-                << rootMoves[i].selDepth << " "
-                << nodesSearched * 1000 / elapsed << " "
-                << tbHits << "\t";
-
-            // Do not print PVs with virtual drops in bughouse variants
-            if (!pos.two_boards())
-                for (Move m : rootMoves[i].pv)
-                    ss << " " << UCI::move(pos, m);
-        }
-        else
-        {
-#endif
         ss << "info"
            << " depth " << d << " seldepth " << rootMoves[i].selDepth << " multipv " << i + 1
            << " score " << UCI::value(v);

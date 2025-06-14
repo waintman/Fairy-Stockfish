@@ -42,7 +42,6 @@ struct Variant {
   Rank maxRank = RANK_8;
   File maxFile = FILE_H;
   bool chess960 = false;
-  bool twoBoards = false;
   int pieceValue[PHASE_NB][PIECE_TYPE_NB] = {};
   std::string customPiece[CUSTOM_PIECES_NB] = {};
   PieceSet pieceTypes = CHESS_PIECES;
@@ -63,7 +62,6 @@ struct Variant {
   bool mandatoryPawnPromotion = true;
   bool mandatoryPiecePromotion = false;
   bool pieceDemotion = false;
-  bool blastOnCapture = false;
   PieceSet blastImmuneTypes = NO_PIECE_SET;
   PieceSet mutuallyImmuneTypes = NO_PIECE_SET;
   PieceSet petrifyOnCaptureTypes = NO_PIECE_SET;
@@ -106,9 +104,7 @@ struct Variant {
   int dropNoDoubledCount = 1;
   bool immobilityIllegal = false;
   bool gating = false;
-  WallingRule wallingRule = NO_WALLING;
   Bitboard wallingRegion[COLOR_NB] = {AllSquares, AllSquares};
-  bool wallOrMove = false;
   bool seirawanGating = false;
   bool cambodianMoves = false;
   Bitboard diagonalLines = 0;

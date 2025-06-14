@@ -365,7 +365,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("pieceToCharTable", v->pieceToCharTable);
     parse_attribute("pocketSize", v->pocketSize);
     parse_attribute("chess960", v->chess960);
-    parse_attribute("twoBoards", v->twoBoards);
     parse_attribute("startFen", v->startFen);
     parse_attribute("promotionRegionWhite", v->promotionRegion[WHITE]);
     parse_attribute("promotionRegionBlack", v->promotionRegion[BLACK]);
@@ -414,7 +413,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("mandatoryPawnPromotion", v->mandatoryPawnPromotion);
     parse_attribute("mandatoryPiecePromotion", v->mandatoryPiecePromotion);
     parse_attribute("pieceDemotion", v->pieceDemotion);
-    parse_attribute("blastOnCapture", v->blastOnCapture);
     parse_attribute("blastImmuneTypes", v->blastImmuneTypes, v->pieceToChar);
     parse_attribute("mutuallyImmuneTypes", v->mutuallyImmuneTypes, v->pieceToChar);
     parse_attribute("petrifyOnCaptureTypes", v->petrifyOnCaptureTypes, v->pieceToChar);
@@ -467,12 +465,10 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("dropNoDoubledCount", v->dropNoDoubledCount);
     parse_attribute("immobilityIllegal", v->immobilityIllegal);
     parse_attribute("gating", v->gating);
-    parse_attribute("wallingRule", v->wallingRule);
     parse_attribute("wallingRegionWhite", v->wallingRegion[WHITE]);
     parse_attribute("wallingRegionBlack", v->wallingRegion[BLACK]);
     parse_attribute("wallingRegion", v->wallingRegion[WHITE]);
     parse_attribute("wallingRegion", v->wallingRegion[BLACK]);
-    parse_attribute("wallOrMove", v->wallOrMove);
     parse_attribute("seirawanGating", v->seirawanGating);
     parse_attribute("cambodianMoves", v->cambodianMoves);
     parse_attribute("diagonalLines", v->diagonalLines);
@@ -599,19 +595,11 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         if (v->castling && v->castlingQueensideFile > v->castlingKingsideFile)
             std::cerr << "Inconsistent settings: castlingQueensideFile > castlingKingsideFile." << std::endl;
 
-        // Check for limitations
-        if (v->pieceDrops && v->wallingRule)
-            std::cerr << "pieceDrops and any walling are incompatible." << std::endl;
-
         // Options incompatible with royal kings
         if (v->pieceTypes & KING)
         {
-            if (v->blastOnCapture)
-                std::cerr << "Can not use kings with blastOnCapture." << std::endl;
             if (v->flipEnclosedPieces)
                 std::cerr << "Can not use kings with flipEnclosedPieces." << std::endl;
-            if (v->wallingRule==DUCK)
-                std::cerr << "Can not use kings with wallingRule = duck." << std::endl;
             // We can not fully check support for custom king movements at this point,
             // since custom pieces are only initialized on loading of the variant.
             // We will assume this is valid, but it might cause problems later if it's not.
@@ -637,8 +625,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
             if (v->mutuallyImmuneTypes)
                 std::cerr << "Can not use kings or pseudo-royal with mutuallyImmuneTypes." << std::endl;
         }
-        if (v->flagPieceSafe && v->blastOnCapture)
-            std::cerr << "Can not use flagPieceSafe with blastOnCapture (flagPieceSafe uses simple assessment that does not see blast)." << std::endl;
     }
     return v;
 }

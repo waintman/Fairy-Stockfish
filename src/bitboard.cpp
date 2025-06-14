@@ -42,6 +42,7 @@ Bitboard PseudoAttacks[PIECE_TYPE_NB][SQUARE_NB];
 Bitboard PawnAttacks[COLOR_NB][SQUARE_NB];
 
 #else
+Bitboard SquareBB[SQUARE_NB];
 Bitboard PseudoAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 Bitboard PseudoMoves[2][COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
 Bitboard LeaperAttacks[COLOR_NB][PIECE_TYPE_NB][SQUARE_NB];
@@ -153,9 +154,9 @@ Bitboard sliding_attack(std::map<Direction, int> directions, Square sq, Bitboard
     {
         int count = 0;
         bool hurdle = false;
-        for (Square s = sq + (c == WHITE ? d : -d);
-              is_ok(s) && distance(s, s - (c == WHITE ? d : -d)) <= 2;
-              s += (c == WHITE ? d : -d))
+        for (Square s = static_cast<Square>(static_cast<int>(sq) + (c == WHITE ? static_cast<int>(d) : -static_cast<int>(d)));
+              is_ok(s) && distance(s, static_cast<Square>(s - (c == WHITE ? d : -d))) <= 2;
+              s = static_cast<Square>(s + (c == WHITE ? static_cast<int>(d) : -static_cast<int>(d))))
         {
             if (MT != HOPPER || hurdle)
             {
@@ -603,10 +604,12 @@ void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> dire
 #ifdef PRECOMPUTED_MAGICS
                 m.magic = magicsInit[s];
 #else
+                m.magic = (rng.sparse_rand<Bitboard>() << 64) ^ rng.sparse_rand<Bitboard>();
+#endif
+#else
                 m.magic = rng.sparse_rand<Bitboard>();
 #endif
 
-#endif
 #ifdef FAIRY_STOCKFISH
             }
 

@@ -23,9 +23,6 @@
 #include <cmath>
 #include <cstdint>
 
-#ifdef FAIRY_STOCKFISH
-#include "partner.h"
-#endif
 #include "search.h"
 #include "ucioption.h"
 
@@ -103,21 +100,6 @@ void TimeManagement::init(const Position &pos, Search::LimitsType& limits,
     TimePoint timeLeft = std::max(TimePoint(1), limits.time[us] + limits.inc[us] * (mtg - 1)
                                                   - moveOverhead * (2 + mtg));
 
-#ifdef FAIRY_STOCKFISH
-  // Adjust time management for four-player variants
-  if (pos.two_boards())
-  {
-      if (Partner.partnerDead && Partner.opptime)
-          timeLeft -= Partner.opptime;
-      else
-      {
-          timeLeft = std::min(timeLeft, 5000 + std::min(std::abs(limits.time[us] - Partner.opptime), TimePoint(Partner.opptime)));
-          if (Partner.fast || Partner.partnerDead)
-              timeLeft /= 4;
-      }
-  }
-
-#endif
     // x basetime (+ z increment)
     // If there is a healthy increment, timeLeft can exceed actual available
     // game time for the current move, so also cap to 20% of available game time.

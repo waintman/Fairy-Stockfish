@@ -111,7 +111,11 @@ namespace Stockfish {
 // bench 64 1 100000 default nodes  : search default positions for 100K nodes each
 // bench 64 4 5000 current movetime : search current position with 4 threads for 5 sec
 // bench 16 1 5 blah perft          : run a perft 5 on positions in file "blah"
+#ifndef FAIRY_STOCKFISH
 std::vector<std::string> setup_bench(const Position& current, std::istream& is) {
+#else
+std::vector<std::string> setup_bench(const Position& current, std::istream& is, OptionsMap& options) {
+#endif
 
     std::vector<std::string> fens, list;
 #ifndef FAIRY_STOCKFISH

@@ -30,7 +30,6 @@
 #ifdef FAIRY_STOCKFISH
 #include "piece.h"
 #include "variant.h"
-#include "xboard.h"
 
 #endif
 
@@ -43,7 +42,6 @@ int main(int argc, char* argv[]) {
 #ifdef FAIRY_STOCKFISH
     pieceMap.init();
     variants.init();
-    PSQT::init(variants.find(Options["UCI_Variant"])->second);
 #endif
     Bitboards::init();
     Position::init();
@@ -59,7 +57,6 @@ int main(int argc, char* argv[]) {
 #ifdef FAIRY_STOCKFISH
     variants.clear_all();
     pieceMap.clear_all();
-    delete XBoard::stateMachine;
 #endif
     return 0;
 }

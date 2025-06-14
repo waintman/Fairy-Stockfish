@@ -24,6 +24,7 @@
 #include <vector>
 
 #ifdef FAIRY_STOCKFISH
+#include "ucioption.h"
 #include "variant.h"
 #endif
 
@@ -35,7 +36,11 @@ void init(const Variant*);
 
 class Position;
 
+#ifndef FAIRY_STOCKFISH
 std::vector<std::string> setup_bench(const Position&, std::istream&);
+#else
+std::vector<std::string> setup_bench(const Position&, std::istream&, OptionsMap& options);
+#endif
 
 }  // namespace Stockfish
 

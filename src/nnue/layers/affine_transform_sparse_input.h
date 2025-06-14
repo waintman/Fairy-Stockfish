@@ -43,7 +43,11 @@ alignas(CacheLineSize) static inline const
       std::array<std::array<std::uint16_t, 8>, 256> v{};
       for (unsigned i = 0; i < 256; ++i)
       {
+#ifndef FAIRY_STOCKFISH
           std::uint64_t j = i, k = 0;
+#else
+          unsigned __int128 j = i, k = 0;
+#endif
           while (j)
               v[i][k++] = pop_lsb(j);
       }

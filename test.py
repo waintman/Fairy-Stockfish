@@ -296,10 +296,6 @@ class TestPyffish(unittest.TestCase):
         result = sf.set_option("UCI_Variant", "capablanca")
         self.assertIsNone(result)
 
-    def test_two_boards(self):
-        self.assertFalse(sf.two_boards("chess"))
-        self.assertTrue(sf.two_boards("bughouse"))
-
     def test_captures_to_hand(self):
         self.assertFalse(sf.captures_to_hand("seirawan"))
         self.assertTrue(sf.captures_to_hand("shouse"))

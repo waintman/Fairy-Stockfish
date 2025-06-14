@@ -1673,11 +1673,19 @@ bool Tablebases::root_probe(Position& pos, Search::RootMoves& rootMoves, bool ru
         // Determine the score to be displayed for this move. Assign at least
         // 1 cp to cursed wins and let it grow to 49 cp as the positions gets
         // closer to a real win.
+#ifndef FAIRY_STOCKFISH
         m.tbScore = r >= bound ? VALUE_MATE - MAX_PLY - 1
                   : r > 0      ? Value((std::max(3, r - (MAX_DTZ - 200)) * int(PawnValue)) / 200)
                   : r == 0     ? VALUE_DRAW
                   : r > -bound ? Value((std::min(-3, r + (MAX_DTZ - 200)) * int(PawnValue)) / 200)
                                : -VALUE_MATE + MAX_PLY + 1;
+#else
+        m.tbScore = r >= bound ? VALUE_MATE - MAX_PLY - 1
+                  : r >  0     ? Value((std::max( 3, r - 800) * int(PawnValueEg)) / 200)
+                  : r == 0     ? VALUE_DRAW
+                  : r > -bound ? Value((std::min(-3, r + 800) * int(PawnValueEg)) / 200)
+                  :             -VALUE_MATE + MAX_PLY + 1;
+#endif
     }
 
     return true;

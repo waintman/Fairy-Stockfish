@@ -28,16 +28,10 @@
 
 #include "misc.h"
 #include "movegen.h"
-#ifdef FAIRY_STOCKFISH
-#include "partner.h"
-#endif
 #include "search.h"
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
 #include "tt.h"
-#ifdef FAIRY_STOCKFISH
-#include "xboard.h"
-#endif
 
 #include "types.h"
 #include "ucioption.h"
@@ -104,14 +98,6 @@ void Thread::idle_loop() {
         std::unique_lock<std::mutex> lk(mutex);
         searching = false;
         cv.notify_one();  // Wake up anyone waiting for search finished
-#ifdef FAIRY_STOCKFISH
-      // Start ponder search from separate thread to prevent deadlock
-      if (Threads.size() && this == Threads.main() && XBoard::stateMachine && XBoard::stateMachine->ponderMove)
-      {
-          NativeThread t(&XBoard::StateMachine::ponder, XBoard::stateMachine);
-          t.detach();
-      }
-#endif
         cv.wait(lk, [&] { return searching; });
 
         if (exit)
@@ -202,25 +188,6 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
             && (limits.banmoves.empty() || !std::count(limits.banmoves.begin(), limits.banmoves.end(), m)))
 #endif
             rootMoves.emplace_back(m);
-#ifdef FAIRY_STOCKFISH
-  // Add virtual drops
-  if (pos.two_boards() && Partner.opptime && limits.time[pos.side_to_move()] > Partner.opptime + 1000)
-  {
-      if (pos.checkers())
-      {
-          for (const auto& m : MoveList<EVASIONS>(pos))
-              if (pos.virtual_drop(m) && pos.legal(m))
-                  rootMoves.emplace_back(m);
-      }
-      else
-      {
-          for (const auto& m : MoveList<QUIETS>(pos))
-              if (pos.virtual_drop(m) && pos.legal(m))
-                  rootMoves.emplace_back(m);
-      }
-  }
-
-#endif
 
     Tablebases::Config tbConfig = Tablebases::rank_root_moves(options, pos, rootMoves);
 

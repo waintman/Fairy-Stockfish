@@ -247,7 +247,7 @@ inline Disambiguation disambiguation_level(const Position& pos, Move m, Notation
         Square s = pop_lsb(b);
         // Construct a potential move with identical special move flags
         // and only a different "from" square.
-        Move testMove = Move(m ^ make_move(from, to) ^ make_move(s, to));
+        Move testMove = Move(m.raw() ^ make_move(from, to).raw() ^ make_move(s, to).raw());
         if (      pos.pseudo_legal(testMove)
                && pos.legal(testMove)
                && !(is_shogi(n) && pos.unpromoted_piece_on(s) != pos.unpromoted_piece_on(from)))
@@ -345,10 +345,6 @@ inline const std::string move_to_san(Position& pos, Move m, Notation n) {
             san += std::string("/") + (char)toupper(pos.piece_to_char()[make_piece(us, gating_type(m))]);
     }
 
-    // Wall square
-    if (pos.walling())
-        san += "," + square(pos, gating_square(m), n);
-
     // Check and checkmate
     if (pos.gives_check(m) && !is_shogi(n) && n != NOTATION_XIANGQI_WXF)
     {
@@ -374,9 +370,7 @@ inline bool has_insufficient_material(Color c, const Position& pos) {
 
     // Restricted pieces
     Bitboard restricted = pos.pieces(~c, KING);
-    // Atomic kings can not help checkmating
-    if (pos.extinction_pseudo_royal() && pos.blast_on_capture() && (pos.extinction_piece_types() & COMMONER))
-        restricted |= pos.pieces(c, COMMONER);
+
     for (PieceSet ps = pos.piece_types(); ps;)
     {
         PieceType pt = pop_lsb(ps);

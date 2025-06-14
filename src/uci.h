@@ -64,8 +64,15 @@ class UCI {
 
     static int         to_cp(Value v);
     static std::string value(Value v);
+#ifndef FAIRY_STOCKFISH
     static std::string square(Square s);
     static std::string move(Move m, bool chess960);
+#else
+    static std::string square(const Position& pos, Square s);
+    static std::string move(const Position& pos, Move m);
+    static std::string dropped_piece(const Position& pos, Move m);
+    void load(std::istringstream& is, bool check = false);
+#endif
     static std::string wdl(Value v, int ply);
     static Move        to_move(const Position& pos, std::string& str);
 
@@ -83,7 +90,7 @@ class UCI {
 #ifndef FAIRY_STOCKFISH
     void go(Position& pos, std::istringstream& is, StateListPtr& states);
 #else
-    void go(Position& pos, std::istringstream& is, StateListPtr& states, std::vector<Move>& banmoves);
+    void go(Position& pos, std::istringstream& is, StateListPtr& states, const std::vector<Move>& banmoves = {});
 #endif
     void bench(Position& pos, std::istream& args, StateListPtr& states);
     void position(Position& pos, std::istringstream& is, StateListPtr& states);
@@ -95,11 +102,6 @@ class UCI {
 std::string value(Value v);
 #ifndef FAIRY_STOCKFISH
 std::string square(Square s);
-#else
-std::string square(const Position& pos, Square s);
-std::string dropped_piece(const Position& pos, Move m);
-#endif
-#ifndef FAIRY_STOCKFISH
 std::string move(Move m, bool chess960);
 #else
 std::string move(const Position& pos, Move m);
@@ -107,12 +109,6 @@ std::string move(const Position& pos, Move m);
 std::string pv(const Position& pos, Depth depth);
 std::string wdl(Value v, int ply);
 Move to_move(const Position& pos, std::string& str);
-
-#ifdef FAIRY_STOCKFISH
-std::string option_name(std::string name);
-bool is_valid_option(OptionsMap& options, std::string& name);
-#endif
-
 
 #ifdef FAIRY_STOCKFISH
 enum Protocol {

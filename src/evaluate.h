@@ -26,6 +26,7 @@
 #ifdef FAIRY_STOCKFISH
 
 #include "variant.h"
+#include "ucioption.h"
 #endif
 
 namespace Stockfish {
@@ -37,24 +38,20 @@ namespace Eval {
 
 std::string trace(Position& pos);
 
-#ifndef FAIRY_STOCKFISH
 int   simple_eval(const Position& pos, Color c);
 Value evaluate(const Position& pos, int optimism);
 
-#else
-Value evaluate(const Position& pos, bool adjusted = false);
-  // The default net name MUST follow the format nn-[SHA256 first 12 digits].nnue
-  // for the build process (profile-build and fishtest) to work. Do not change the
-  // name of the macro, as it is used in the Makefile.
+#ifdef FAIRY_STOCKFISH
 #define EvalFileDefaultName   "nn-5af11540bbfe.nnue"
 
 #endif
-#ifndef FAIRY_STOCKFISH
+
 // The default net name MUST follow the format nn-[SHA256 first 12 digits].nnue
 // for the build process (profile-build and fishtest) to work. Do not change the
 // name of the macro, as it is used in the Makefile.
 #define EvalFileDefaultNameBig "nn-b1a57edbea57.nnue"
 #define EvalFileDefaultNameSmall "nn-baff1ede1f90.nnue"
+
 
 struct EvalFile {
     // UCI option name
@@ -66,14 +63,8 @@ struct EvalFile {
     // Net description extracted from the net file
     std::string netDescription;
 };
-#else
-void init();
-void verify();
 
-extern const Variant* currentNnueVariant;
-#endif
 namespace NNUE {
-#ifndef FAIRY_STOCKFISH
 
 enum NetSize : int;
 
@@ -81,11 +72,15 @@ using EvalFiles = std::unordered_map<Eval::NNUE::NetSize, EvalFile>;
 
 EvalFiles load_networks(const std::string&, const OptionsMap&, EvalFiles);
 void      verify(const OptionsMap&, const EvalFiles&);
-#endif
 }  // namespace NNUE
 
 }  // namespace Eval
+#ifdef FAIRY_STOCKFISH
+//void init(OptionsMap &options);
+//void verify();
 
+extern const Variant* currentNnueVariant;
+#endif
 }  // namespace Stockfish
 
 #endif  // #ifndef EVALUATE_H_INCLUDED

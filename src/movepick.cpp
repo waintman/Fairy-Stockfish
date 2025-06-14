@@ -194,12 +194,15 @@ void MovePicker::score() {
 
     for (auto& m : *this)
         if constexpr (Type == CAPTURES)
+#ifndef FAIRY_STOCKFISH
             m.value =
               7 * int(PieceValue[pos.piece_on(m.to_sq())])
-#ifdef FAIRY_STOCKFISH
-              + (*gateHistory)[pos.side_to_move()][gating_square(m)]
-#endif
               + (*captureHistory)[pos.moved_piece(m)][m.to_sq()][type_of(pos.piece_on(m.to_sq()))];
+#else
+            m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
+              + (*gateHistory)[pos.side_to_move()][gating_square(m)]
+              + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
+#endif
 
         else if constexpr (Type == QUIETS)
         {
@@ -248,16 +251,23 @@ void MovePicker::score() {
         else  // Type == EVASIONS
         {
             if (pos.capture_stage(m))
+#ifndef FAIRY_STOCKFISH
                 m.value =
                   PieceValue[pos.piece_on(m.to_sq())] - type_of(pos.moved_piece(m)) + (1 << 28);
-            else
-                m.value = (*mainHistory)[pos.side_to_move()][m.from_to()]
-#ifndef FAIRY_STOCKFISH
-                        + (*continuationHistory[0])[pos.moved_piece(m)][m.to_sq()]
 #else
-                        + (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
+                m.value =  PieceValue[MG][pos.piece_on(to_sq(m))]
+                  - Value(type_of(pos.moved_piece(m)));
 #endif
+            else
+#ifndef FAIRY_STOCKFISH
+                m.value = (*mainHistory)[pos.side_to_move()][m.from_to()]
+                        + (*continuationHistory[0])[pos.moved_piece(m)][m.to_sq()]
                         + (*pawnHistory)[pawn_structure_index(pos)][pos.moved_piece(m)][m.to_sq()];
+#else
+                m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
+                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
+                        - (1 << 28);
+#endif
         }
 }
 
@@ -315,11 +325,11 @@ top:
         if (select<Next>([&]() {
                 // Move losing capture to endBadCaptures to be tried later
 #ifndef FAIRY_STOCKFISH
-                return pos.see_ge(*cur, -cur->value / 18) ? true
+                return pos.see_ge(*cur, -cur->value / 18) ?
 #else
                 return pos.see_ge(*cur, Value(-cur->value - 500 * (pos.captures_to_hand() && pos.gives_check(*cur)))) ?
 #endif
-                                                          : (*endBadCaptures++ = *cur, false);
+                                                         true : (*endBadCaptures++ = *cur, false);
             }))
             return *(cur - 1);
 

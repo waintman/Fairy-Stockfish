@@ -31,43 +31,6 @@ namespace {
 #ifdef FAIRY_STOCKFISH
 template<MoveType T>
 ExtMove* make_move_and_gating(const Position& pos, ExtMove* moveList, Color us, Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
-
-// Wall placing moves
-//if it's "wall or move", and they chose non-null move, skip even generating wall move
-    if (pos.walling() && !(pos.variant()->wallOrMove && (from!=to)))
-    {
-        Bitboard b = pos.board_bb() & ~((pos.pieces() ^ from) | to);
-        if (T == CASTLING)
-        {
-            Square kto = make_square(to > from ? pos.castling_kingside_file() : pos.castling_queenside_file(), pos.castling_rank(us));
-            Direction step = kto > from ? EAST : WEST;
-            Square rto = kto - step;
-            b ^= square_bb(to) ^ kto ^ rto;
-        }
-        if (T == EN_PASSANT)
-            b ^= pos.capture_square(to);
-
-        if (pos.walling_rule() == ARROW)
-            b &= moves_bb(us, type_of(pos.piece_on(from)), to, pos.pieces() ^ from);
-
-        //Any current or future wall variant must follow the walling region rule if set:
-        b &= pos.variant()->wallingRegion[us];
-
-        if (pos.walling_rule() == PAST)
-            b &= square_bb(from);
-        if (pos.walling_rule() == EDGE)
-        {
-            Bitboard wallsquares = pos.state()->wallSquares;
-
-            b &= (FileABB | file_bb(pos.max_file()) | Rank1BB | rank_bb(pos.max_rank())) |
-                ( shift<NORTH     >(wallsquares) | shift<SOUTH     >(wallsquares)
-                | shift<EAST      >(wallsquares) | shift<WEST      >(wallsquares));
-        }
-        while (b)
-            *moveList++ = make_gating<T>(from, to, pt, pop_lsb(b));
-        return moveList;
-    }
-
     *moveList++ = make<T>(from, to, pt);
 
     // Gating moves
@@ -132,7 +95,7 @@ template<Color Us, GenType Type>
 ExtMove* generate_drops(const Position& pos, ExtMove* moveList, PieceType pt, Bitboard b) {
     assert(Type != CAPTURES);
     // Do not generate virtual drops for perft and at root
-    if (pos.can_drop(Us, pt) || (Type != NON_EVASIONS && pos.two_boards() && pos.allow_virtual_drop(Us, pt)))
+    if (pos.can_drop(Us, pt))
     {
         // Restrict to valid target
         b &= pos.drop_region(Us, pt);
@@ -568,7 +531,7 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
         for (PieceSet ps = pos.piece_types() & ~(piece_set(PAWN) | KING); ps;)
             moveList = generate_moves<Us, Type>(pos, moveList, pop_lsb(ps), target);
         // generate drops
-        if (pos.piece_drops() && Type != CAPTURES && (pos.can_drop(Us, ALL_PIECES) || pos.two_boards()))
+        if (pos.piece_drops() && Type != CAPTURES && pos.can_drop(Us, ALL_PIECES))
             for (PieceSet ps = pos.piece_types(); ps;)
                 moveList = generate_drops<Us, Type>(pos, moveList, pop_lsb(ps), target & ~pos.pieces(~Us));
 
@@ -607,11 +570,6 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
         if (pos.pass(Us) && !pos.count<KING>(Us) && pos.pieces(Us))
             *moveList++ = make<SPECIAL>(lsb(pos.pieces(Us)), lsb(pos.pieces(Us)));
 
-        //if "wall or move", generate walling action with null move
-        if (pos.variant()->wallOrMove)
-        {
-            moveList = make_move_and_gating<SPECIAL>(pos, moveList, Us, lsb(pos.pieces(Us)), lsb(pos.pieces(Us)));
-        }
     }
 #endif
 

@@ -123,7 +123,7 @@ constexpr int MAX_PLY   = 246;
 #else
 #ifdef LARGEBOARDS
 #if defined(__GNUC__) && defined(IS_64BIT)
-typedef unsigned __int128 Bitboard;
+using Bitboard = unsigned __int128;
 #else
 struct Bitboard {
     uint64_t b64[2];
@@ -314,6 +314,13 @@ enum EndgameEval {
 enum OptBool {
     NO_VALUE, VALUE_FALSE, VALUE_TRUE
 };
+
+enum Phase {
+  PHASE_ENDGAME,
+  PHASE_MIDGAME = 128,
+  MG = 0, EG = 1, PHASE_NB = 2
+};
+
 #endif
 
 enum Bound {
@@ -353,44 +360,52 @@ constexpr Value VALUE_TB_LOSS_IN_MAX_PLY = -VALUE_TB_WIN_IN_MAX_PLY;
 // In the code, we make the assumption that these values
 // are such that non_pawn_material() can be used to uniquely
 // identify the material on the board.
+#ifndef FAIRY_STOCKFISH
 constexpr Value PawnValue   = 208;
 constexpr Value KnightValue = 781;
 constexpr Value BishopValue = 825;
 constexpr Value RookValue   = 1276;
 constexpr Value QueenValue  = 2538;
 
-#ifdef FAIRY_STOCKFISH
-constexpr Value FersValue               = 420;
-constexpr Value AlfilValue              = 350;
-constexpr Value FersAlfilValue          = 700;
-constexpr Value SilverValue             = 660;
-constexpr Value AiwokValue              = 2300;
-constexpr Value BersValueMg             = 1800;
-constexpr Value ArchbishopValue         = 2200;
-constexpr Value ChancellorValue         = 2300;
-constexpr Value AmazonValue             = 2700;
-constexpr Value KnibisValue             = 1100;
-constexpr Value BiskniValue             = 750;
-constexpr Value KnirooValue             = 1050;
-constexpr Value RookniValue             = 800;
-constexpr Value ShogiPawnValue          = 90;
-constexpr Value LanceValue              = 400;
-constexpr Value ShogiKnightValue        = 420;
-constexpr Value GoldValue               = 720;
-constexpr Value DragonHorseValue        = 1550;
-constexpr Value ClobberPieceValue       = 300;
-constexpr Value BreakthroughPieceValue  = 300;
-constexpr Value ImmobilePieceValue      = 50;
-constexpr Value CannonPieceValue        = 800;
-constexpr Value JanggiCannonPieceValue  = 800;
-constexpr Value SoldierValue            = 200;
-constexpr Value HorseValue              = 520;
-constexpr Value ElephantValue           = 300;
-constexpr Value JanggiElephantValue     = 340;
-constexpr Value BannerValue             = 3400;
-constexpr Value WazirValue              = 400;
-constexpr Value CommonerValue           = 700;
-constexpr Value CentaurValueMg          = 1800;
+#else
+constexpr Value PawnValueMg   = 126,   PawnValueEg   = 208;
+constexpr Value KnightValueMg = 781,   KnightValueEg = 854;
+constexpr Value BishopValueMg = 825,   BishopValueEg = 915;
+constexpr Value RookValueMg   = 1276,  RookValueEg   = 1380;
+constexpr Value QueenValueMg  = 2538,  QueenValueEg  = 2682;
+constexpr Value FersValueMg              = 420,   FersValueEg              = 450;
+constexpr Value AlfilValueMg             = 350,   AlfilValueEg             = 330;
+constexpr Value FersAlfilValueMg         = 700,   FersAlfilValueEg         = 650;
+constexpr Value SilverValueMg            = 660,   SilverValueEg            = 640;
+constexpr Value AiwokValueMg             = 2300,  AiwokValueEg             = 2700;
+constexpr Value BersValueMg              = 1800,  BersValueEg              = 1900;
+constexpr Value ArchbishopValueMg        = 2200,  ArchbishopValueEg        = 2200;
+constexpr Value ChancellorValueMg        = 2300,  ChancellorValueEg        = 2600;
+constexpr Value AmazonValueMg            = 2700,  AmazonValueEg            = 2850;
+constexpr Value KnibisValueMg            = 1100,  KnibisValueEg            = 1200;
+constexpr Value BiskniValueMg            = 750,   BiskniValueEg            = 700;
+constexpr Value KnirooValueMg            = 1050,  KnirooValueEg            = 1250;
+constexpr Value RookniValueMg            = 800,   RookniValueEg            = 950;
+constexpr Value ShogiPawnValueMg         =  90,   ShogiPawnValueEg         = 100;
+constexpr Value LanceValueMg             = 400,   LanceValueEg             = 240;
+constexpr Value ShogiKnightValueMg       = 420,   ShogiKnightValueEg       = 290;
+constexpr Value GoldValueMg              = 720,   GoldValueEg              = 700;
+constexpr Value DragonHorseValueMg       = 1550,  DragonHorseValueEg       = 1550;
+constexpr Value ClobberPieceValueMg      = 300,   ClobberPieceValueEg      = 300;
+constexpr Value BreakthroughPieceValueMg = 300,   BreakthroughPieceValueEg = 300;
+constexpr Value ImmobilePieceValueMg     = 50,    ImmobilePieceValueEg     = 50;
+constexpr Value CannonPieceValueMg       = 800,   CannonPieceValueEg       = 700;
+constexpr Value JanggiCannonPieceValueMg = 800,   JanggiCannonPieceValueEg = 600;
+constexpr Value SoldierValueMg           = 200,   SoldierValueEg           = 270;
+constexpr Value HorseValueMg             = 520,   HorseValueEg             = 800;
+constexpr Value ElephantValueMg          = 300,   ElephantValueEg          = 300;
+constexpr Value JanggiElephantValueMg    = 340,   JanggiElephantValueEg    = 350;
+constexpr Value BannerValueMg            = 3400,  BannerValueEg            = 3500;
+constexpr Value WazirValueMg             = 400,   WazirValueEg             = 350;
+constexpr Value CommonerValueMg          = 700,   CommonerValueEg          = 900;
+constexpr Value CentaurValueMg           = 1800,  CentaurValueEg           = 1900;
+
+constexpr Value MidgameLimit  = 15258, EndgameLimit  = 3915;
 #endif
 
 // clang-format off
@@ -453,6 +468,46 @@ constexpr Value PieceValue[PIECE_NB] = {
   VALUE_ZERO, PawnValue, KnightValue, BishopValue, RookValue, QueenValue, VALUE_ZERO, VALUE_ZERO,
   VALUE_ZERO, PawnValue, KnightValue, BishopValue, RookValue, QueenValue, VALUE_ZERO, VALUE_ZERO};
 #else
+constexpr Value PieceValue[PHASE_NB][PIECE_NB] = {
+{
+  VALUE_ZERO, PawnValueMg, KnightValueMg, BishopValueMg, RookValueMg, QueenValueMg, FersValueMg, AlfilValueMg,
+  FersAlfilValueMg, SilverValueMg, AiwokValueMg, BersValueMg, ArchbishopValueMg, ChancellorValueMg, AmazonValueMg, KnibisValueMg,
+  BiskniValueMg, KnirooValueMg, RookniValueMg, ShogiPawnValueMg, LanceValueMg, ShogiKnightValueMg, GoldValueMg, DragonHorseValueMg,
+  ClobberPieceValueMg, BreakthroughPieceValueMg, ImmobilePieceValueMg, CannonPieceValueMg, JanggiCannonPieceValueMg, SoldierValueMg, HorseValueMg, ElephantValueMg,
+  JanggiElephantValueMg, BannerValueMg, WazirValueMg, CommonerValueMg, CentaurValueMg, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,  
+  VALUE_ZERO, PawnValueMg, KnightValueMg, BishopValueMg, RookValueMg, QueenValueMg, FersValueMg, AlfilValueMg,
+  FersAlfilValueMg, SilverValueMg, AiwokValueMg, BersValueMg, ArchbishopValueMg, ChancellorValueMg, AmazonValueMg, KnibisValueMg,
+  BiskniValueMg, KnirooValueMg, RookniValueMg, ShogiPawnValueMg, LanceValueMg, ShogiKnightValueMg, GoldValueMg, DragonHorseValueMg,
+  ClobberPieceValueMg, BreakthroughPieceValueMg, ImmobilePieceValueMg, CannonPieceValueMg, JanggiCannonPieceValueMg, SoldierValueMg, HorseValueMg, ElephantValueMg,
+  JanggiElephantValueMg, BannerValueMg, WazirValueMg, CommonerValueMg, CentaurValueMg, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+},
+{
+  VALUE_ZERO, PawnValueEg, KnightValueEg, BishopValueEg, RookValueEg, QueenValueEg, FersValueEg, AlfilValueEg,
+  FersAlfilValueEg, SilverValueEg, AiwokValueEg, BersValueEg, ArchbishopValueEg, ChancellorValueEg, AmazonValueEg, KnibisValueEg,
+  BiskniValueEg, KnirooValueEg, RookniValueEg, ShogiPawnValueEg, LanceValueEg, ShogiKnightValueEg, GoldValueEg, DragonHorseValueEg,
+  ClobberPieceValueEg, BreakthroughPieceValueEg, ImmobilePieceValueEg, CannonPieceValueEg, JanggiCannonPieceValueEg, SoldierValueEg, HorseValueEg, ElephantValueEg,
+  JanggiElephantValueEg, BannerValueEg, WazirValueEg, CommonerValueEg, CentaurValueEg, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+
+  VALUE_ZERO, PawnValueEg, KnightValueEg, BishopValueEg, RookValueEg, QueenValueEg, FersValueEg, AlfilValueEg,
+  FersAlfilValueEg, SilverValueEg, AiwokValueEg, BersValueEg, ArchbishopValueEg, ChancellorValueEg, AmazonValueEg, KnibisValueEg,
+  BiskniValueEg, KnirooValueEg, RookniValueEg, ShogiPawnValueEg, LanceValueEg, ShogiKnightValueEg, GoldValueEg, DragonHorseValueEg,
+  ClobberPieceValueEg, BreakthroughPieceValueEg, ImmobilePieceValueEg, CannonPieceValueEg, JanggiCannonPieceValueEg, SoldierValueEg, HorseValueEg, ElephantValueEg,
+  JanggiElephantValueEg, BannerValueEg, WazirValueEg, CommonerValueEg, CentaurValueEg, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
+},
+};
+
 enum PieceSet : uint64_t {
     NO_PIECE_SET = 0,
     CHESS_PIECES = (1ULL << PAWN) | (1ULL << KNIGHT) | (1ULL << BISHOP) | (1ULL << ROOK) | (1ULL << QUEEN) | (1ULL << KING),
@@ -486,9 +541,6 @@ enum RiderType : int {
     NON_SLIDING_RIDERS = HOPPING_RIDERS | LAME_LEAPERS | RIDER_NIGHTRIDER,
 };
 
-extern Value PieceValue[PIECE_NB];
-extern Value EvalPieceValue[PIECE_NB]; // variant piece values for evaluation
-extern Value CapturePieceValue[PIECE_NB]; // variant piece values for captures/search
 #endif
 using Depth = int;
 
@@ -704,7 +756,13 @@ inline Square&   operator-=(Square& s, Direction d) { return s = s - d; }
 constexpr Color operator~(Color c) { return Color(c ^ BLACK); }
 
 // Swap A1 <-> A8
+#ifndef FAIRY_STOCKFISH
 constexpr Square flip_rank(Square s) { return Square(s ^ SQ_A8); }
+#else
+constexpr Square flip_rank(Square s, Rank maxRank = RANK_8) {
+  return Square(s + NORTH * (maxRank - 2 * (s / NORTH)));
+}
+#endif
 
 // Swap A1 <-> H1
 constexpr Square flip_file(Square s) { return Square(s ^ SQ_H1); }
@@ -855,8 +913,13 @@ enum MoveType : int {
 class Move {
    public:
     Move() = default;
+#ifndef FAIRY_STOCKFISH
     constexpr explicit Move(std::uint16_t d) :
         data(d) {}
+#else
+    constexpr explicit Move(std::uint32_t d) :
+        data(d) {}
+#endif
 
     constexpr Move(Square from, Square to) :
         data((from << 6) + to) {}
@@ -898,14 +961,22 @@ class Move {
 
     constexpr explicit operator bool() const { return data != 0; }
 
+#ifndef FAIRY_STOCKFISH
     constexpr std::uint16_t raw() const { return data; }
+#else
+    constexpr std::uint32_t raw() const { return data; }
+#endif
 
     struct MoveHash {
         std::size_t operator()(const Move& m) const { return make_key(m.data); }
     };
 
    protected:
+#ifndef FAIRY_STOCKFISH
     std::uint16_t data;
+#else
+    std::uint32_t data;
+#endif
 };
 #ifdef FAIRY_STOCKFISH
 constexpr MoveType type_of(Move m) {
