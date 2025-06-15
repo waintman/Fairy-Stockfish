@@ -332,8 +332,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         for (Color c : {WHITE, BLACK})
             v->promotionRegion[c] = zone_bb(c, promotionRank, v->maxRank);
     }
-    Rank doubleStepRank = RANK_2;
-    Rank doubleStepRankMin = RANK_2;
     parse_attribute<false>("whiteFlag", v->flagRegion[WHITE]);
     parse_attribute<false>("blackFlag", v->flagRegion[BLACK]);
     parse_attribute<false>("castlingRookPiece", v->castlingRookPieces[WHITE], v->pieceToChar);
@@ -403,7 +401,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
             std::cerr << "promotedPieceType - Invalid piece type: " << token << std::endl;
     }
     parse_attribute("mandatoryPawnPromotion", v->mandatoryPawnPromotion);
-    parse_attribute("blastImmuneTypes", v->blastImmuneTypes, v->pieceToChar);
     parse_attribute("mutuallyImmuneTypes", v->mutuallyImmuneTypes, v->pieceToChar);
     parse_attribute("petrifyOnCaptureTypes", v->petrifyOnCaptureTypes, v->pieceToChar);
     parse_attribute("petrifyBlastPieces", v->petrifyBlastPieces);
@@ -586,8 +583,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         // 3. Moving a (pseudo-)royal mutuallyImmuneType into a square threatened by the same type is legal.
         if ((v->extinctionPseudoRoyal) || (v->pieceTypes & KING))
         {
-            if (v->blastImmuneTypes)
-                std::cerr << "Can not use kings or pseudo-royal with blastImmuneTypes." << std::endl;
             if (v->mutuallyImmuneTypes)
                 std::cerr << "Can not use kings or pseudo-royal with mutuallyImmuneTypes." << std::endl;
         }

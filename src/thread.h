@@ -90,7 +90,7 @@ class ThreadPool {
 
 
 #ifdef FAIRY_STOCKFISH
-    Thread* bestThread; // to fetch best move when in XBoard mode
+    //Thread* bestThread; // to fetch best move when in XBoard mode
 #endif
 
     Search::SearchManager* main_manager() const {

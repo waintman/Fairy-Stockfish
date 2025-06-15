@@ -1121,7 +1121,6 @@ Bitboard Position::checked_pseudo_royals(Color c) const {
   assert(extinction_pseudo_royal());
   Bitboard checked = 0;
   Bitboard pseudoRoyals = st->pseudoRoyals & pieces(c);
-  Bitboard pseudoRoyalsTheirs = st->pseudoRoyals & pieces(~c);
   while (pseudoRoyals)
   {
       Square sr = pop_lsb(pseudoRoyals);
@@ -1812,10 +1811,6 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
         dp.from[1]   = capsq;
         dp.to[1]     = SQ_NONE;
 
-#ifdef FAIRY_STOCKFISH
-        bool capturedPromoted = is_promoted(capsq);
-        Piece unpromotedCaptured = unpromoted_piece_on(capsq);
-#endif
         // Update board and piece lists
         remove_piece(capsq);
 
@@ -2148,11 +2143,6 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
     {
         std::memset(st->unpromotedBycatch, 0, sizeof(st->unpromotedBycatch));
         st->demotedBycatch = st->promotedBycatch = 0;
-        Bitboard blastImmune = 0;
-        for (PieceSet ps = blast_immune_types(); ps;){
-            PieceType pt = pop_lsb(ps);
-            blastImmune |= pieces(pt);
-        };
         Bitboard blast = var->petrifyOnCaptureTypes & type_of(pc) ? square_bb(to) : Bitboard(0);
         while (blast)
         {

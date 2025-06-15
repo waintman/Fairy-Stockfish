@@ -831,7 +831,7 @@ Value Search::Worker::search(
 #ifndef FAIRY_STOCKFISH
         && ss->staticEval >= beta - 21 * depth + 330
 #else
-        && ss->staticEval >= beta - 21 * depth + 330 + 200 * ((pos.piece_types() & PAWN))
+        && ss->staticEval >= beta - 21 * depth + 330 + 200 * (!!(pos.piece_types() & PAWN))
 #endif
         && !excludedMove && pos.non_pawn_material(us)
 #ifdef FAIRY_STOCKFISH

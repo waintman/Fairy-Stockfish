@@ -48,12 +48,6 @@ void TimeManagement::advance_nodes_time(std::int64_t nodes) {
 // the bounds of time allowed for the current game ply. We currently support:
 //      1) x basetime (+ z increment)
 //      2) x moves in y seconds (+ z increment)
-#ifdef __INTELLISENSE__
-void TimeManagement::init(Search::LimitsType& limits,
-                          Color               us,
-                          int                 ply,
-                          const OptionsMap&   options) {
-#else
 #ifndef FAIRY_STOCKFISH
 void TimeManagement::init(Search::LimitsType& limits,
 #else
@@ -62,7 +56,6 @@ void TimeManagement::init(const Position &pos, Search::LimitsType& limits,
                           Color               us,
                           int                 ply,
                           const OptionsMap&   options) {
-#endif
     // If we have no time, no need to initialize TM, except for the start time,
     // which is used by movetime.
     startTime = limits.startTime;

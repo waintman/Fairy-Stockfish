@@ -59,7 +59,6 @@ struct Variant {
   int promotionLimit[PIECE_TYPE_NB] = {}; // 0 means unlimited
   PieceType promotedPieceType[PIECE_TYPE_NB] = {};
   bool mandatoryPawnPromotion = true;
-  PieceSet blastImmuneTypes = NO_PIECE_SET;
   PieceSet mutuallyImmuneTypes = NO_PIECE_SET;
   PieceSet petrifyOnCaptureTypes = NO_PIECE_SET;
   bool petrifyBlastPieces = false;

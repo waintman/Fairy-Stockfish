@@ -148,7 +148,6 @@ class Position {
     int promotion_limit(PieceType pt) const;
     PieceType promoted_piece_type(PieceType pt) const;
     bool mandatory_pawn_promotion() const;
-    PieceSet blast_immune_types() const;
     PieceSet mutually_immune_types() const;
     EndgameEval endgame_eval() const;
     File castling_kingside_file() const;
@@ -507,11 +506,6 @@ inline bool Position::mandatory_pawn_promotion() const {
     return var->mandatoryPawnPromotion;
 }
 
-inline PieceSet Position::blast_immune_types() const {
-    assert(var != nullptr);
-    return var->blastImmuneTypes;
-}
-
 inline PieceSet Position::mutually_immune_types() const {
     assert(var != nullptr);
     return var->mutuallyImmuneTypes;
@@ -806,7 +800,6 @@ inline Value Position::stalemate_value(int ply) const {
     if (var->extinctionPseudoRoyal)
     {
         Bitboard pseudoRoyals = st->pseudoRoyals & pieces(sideToMove);
-        Bitboard pseudoRoyalsTheirs = st->pseudoRoyals & pieces(~sideToMove);
         while (pseudoRoyals)
         {
             Square sr = pop_lsb(pseudoRoyals);
