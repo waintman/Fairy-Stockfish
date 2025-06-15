@@ -382,7 +382,7 @@ namespace {
         return v;
     }
 
-#ifdef LARGEBOARDS
+
     // Capablanca chess
     // https://en.wikipedia.org/wiki/Capablanca_chess
     Variant* capablanca_variant() {
@@ -546,7 +546,7 @@ namespace {
         v->nnueAlias = "janggi";
         return v;
     }
-#endif
+
 
 } // namespace
 

@@ -600,7 +600,7 @@ std::string UCI::value(Value v) {
 /// UCI::dropped_piece() generates a piece label string from a Move.
 
 std::string UCI::dropped_piece(const Position& pos, Move m) {
-  assert(type_of(m) == DROP);
+  assert(m.type_of() == DROP);
   if (dropped_piece_type(m) == pos.promoted_piece_type(in_hand_piece_type(m)))
       // Dropping as promoted piece
       return std::string{'+', pos.piece_to_char()[in_hand_piece_type(m)]};
@@ -616,13 +616,9 @@ std::string UCI::square(Square s) {
 
 #else
 std::string UCI::square(const Position& pos, Square s) {
-#ifdef LARGEBOARDS
         return rank_of(s) < RANK_10 ? std::string{ char('a' + file_of(s)), char('1' + (rank_of(s) % 10)) }
                                     : std::string{ char('a' + file_of(s)), char('0' + ((rank_of(s) + 1) / 10)),
                                                    char('0' + ((rank_of(s) + 1) % 10)) };
-#else
-    return std::string{ char('1' + pos.max_file() - file_of(s)), char('a' + pos.max_rank() - rank_of(s)) };
-#endif
 }
 #endif
 

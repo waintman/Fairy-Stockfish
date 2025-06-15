@@ -1342,7 +1342,7 @@ void Tablebases::init(const std::string& paths) {
     MaxCardinality = 0;
     TBFile::Paths  = paths;
 
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
     // Tablebases are not working for large-board version
     return;
 #endif

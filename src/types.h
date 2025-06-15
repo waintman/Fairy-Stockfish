@@ -85,11 +85,7 @@
     #ifndef FAIRY_STOCKFISH
         #define pext(b, m) _pext_u64(b, m)
     #else
-        #ifdef LARGEBOARDS
-            #define pext(b, m) (_pext_u64(b, m) ^ (_pext_u64(b >> 64, m >> 64) << popcount((m << 64) >> 64)))
-        #else
-            #define pext(b, m) _pext_u64(b, m)
-        #endif
+        #define pext(b, m) (_pext_u64(b, m) ^ (_pext_u64(b >> 64, m >> 64) << popcount((m << 64) >> 64)))
     #endif
     #else
         #define pext(b, m) 0
@@ -121,7 +117,6 @@ using Bitboard = uint64_t;
 constexpr int MAX_MOVES = 256;
 constexpr int MAX_PLY   = 246;
 #else
-#ifdef LARGEBOARDS
 #if defined(__GNUC__) && defined(IS_64BIT)
 using Bitboard = unsigned __int128;
 #else
@@ -233,30 +228,13 @@ struct Bitboard {
 };
 #endif
 constexpr int SQUARE_BITS = 7;
-#else
-typedef uint64_t Bitboard;
-constexpr int SQUARE_BITS = 6;
-#endif
 
 //When defined, move list will be stored in heap. Delete this if you want to use stack to store move list. Using stack can cause overflow (Segmentation Fault) when the search is too deep.
 #define USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
 
-#ifdef ALLVARS
-constexpr int MAX_MOVES = 8192;
-#ifdef USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
-constexpr int MAX_PLY = 246;
-#else
-constexpr int MAX_PLY = 60;
-#endif
-/// endif USE_HEAP_INSTEAD_OF_STACK_FOR_MOVE_LIST
-#else
 constexpr int MAX_MOVES = 1024;
 constexpr int MAX_PLY = 246;
-#endif
-/// endif ALLVARS
-#endif
 
-#ifdef FAIRY_STOCKFISH
 constexpr int MOVE_TYPE_BITS = 4;
 #endif
 
@@ -555,7 +533,7 @@ enum : int {
 
 // clang-format off
 enum Square : int {
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
     SQ_A1, SQ_B1, SQ_C1, SQ_D1, SQ_E1, SQ_F1, SQ_G1, SQ_H1, SQ_I1, SQ_J1, SQ_K1, SQ_L1,
     SQ_A2, SQ_B2, SQ_C2, SQ_D2, SQ_E2, SQ_F2, SQ_G2, SQ_H2, SQ_I2, SQ_J2, SQ_K2, SQ_L2,
     SQ_A3, SQ_B3, SQ_C3, SQ_D3, SQ_E3, SQ_F3, SQ_G3, SQ_H3, SQ_I3, SQ_J3, SQ_K3, SQ_L3,
@@ -582,13 +560,8 @@ enum Square : int {
 #ifndef FAIRY_STOCKFISH
     SQUARE_NB   = 64
 #else
-#ifdef LARGEBOARDS
     SQUARE_NB = 120,
     SQUARE_BIT_MASK = 127,
-#else
-    SQUARE_NB = 64,
-    SQUARE_BIT_MASK = 63,
-#endif
     SQ_MAX = SQUARE_NB - 1,
     SQUARE_NB_CHESS = 64,
     SQUARE_NB_SHOGI = 81,
@@ -597,7 +570,7 @@ enum Square : int {
 // clang-format on
 
 enum Direction : int {
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
     NORTH =  12,
 #else
     NORTH = 8,
@@ -624,11 +597,7 @@ enum File : int {
     FILE_H,
     FILE_NB
 #else
-#ifdef LARGEBOARDS
     FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H, FILE_I, FILE_J, FILE_K, FILE_L,
-#else
-    FILE_A, FILE_B, FILE_C, FILE_D, FILE_E, FILE_F, FILE_G, FILE_H,
-#endif
     FILE_NB,
     FILE_MAX = FILE_NB - 1
 #endif
@@ -646,11 +615,7 @@ enum Rank : int {
     RANK_8,
     RANK_NB
 #else
-#ifdef LARGEBOARDS
     RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8, RANK_9, RANK_10,
-#else
-    RANK_1, RANK_2, RANK_3, RANK_4, RANK_5, RANK_6, RANK_7, RANK_8,
-#endif
     RANK_NB,
     RANK_MAX = RANK_NB - 1
 #endif

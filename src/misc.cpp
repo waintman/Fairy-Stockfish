@@ -161,11 +161,7 @@ class Logger {
 //
 // For releases (non-dev builds) we only include the version number:
 // Stockfish version
-#ifndef FAIRY_STOCKFISH
 std::string engine_info(bool to_uci) {
-#else
-std::string engine_info(bool to_uci, bool to_xboard) {
-#endif
     std::stringstream ss;
 #ifndef FAIRY_STOCKFISH
     ss << "Stockfish " << version << std::setfill('0');
@@ -201,9 +197,8 @@ std::string engine_info(bool to_uci, bool to_xboard) {
 #endif
     }
 
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
     ss << " LB";
-    if (!to_xboard)
 #endif
     ss << (to_uci ? "\nid author " : " by ")
 #ifndef FAIRY_STOCKFISH

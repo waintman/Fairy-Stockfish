@@ -40,7 +40,7 @@ std::string pretty(Bitboard b);
 
 }  // namespace Stockfish::Bitboards
 
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
 constexpr Bitboard AllSquares = ((~Bitboard(0)) >> 8);
 constexpr Bitboard DarkSquares = (Bitboard(0xAAA555AAA555AAULL) << 64) ^ Bitboard(0xA555AAA555AAA555ULL);
 constexpr Bitboard FileABB = (Bitboard(0x00100100100100ULL) << 64) ^ Bitboard(0x1001001001001001ULL);
@@ -56,20 +56,15 @@ constexpr Bitboard FileFBB = FileABB << 5;
 constexpr Bitboard FileGBB = FileABB << 6;
 constexpr Bitboard FileHBB = FileABB << 7;
 
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
 constexpr Bitboard FileIBB = FileABB << 8;
 constexpr Bitboard FileJBB = FileABB << 9;
 constexpr Bitboard FileKBB = FileABB << 10;
 constexpr Bitboard FileLBB = FileABB << 11;
 #endif
 
-
-#ifdef LARGEBOARDS
-constexpr Bitboard Rank1BB = 0xFFF;
-#else
-constexpr Bitboard Rank1BB = 0xFF;
-#endif
 #ifndef FAIRY_STOCKFISH
+constexpr Bitboard Rank1BB = 0xFF;
 constexpr Bitboard Rank2BB = Rank1BB << (8 * 1);
 constexpr Bitboard Rank3BB = Rank1BB << (8 * 2);
 constexpr Bitboard Rank4BB = Rank1BB << (8 * 3);
@@ -78,6 +73,7 @@ constexpr Bitboard Rank6BB = Rank1BB << (8 * 5);
 constexpr Bitboard Rank7BB = Rank1BB << (8 * 6);
 constexpr Bitboard Rank8BB = Rank1BB << (8 * 7);
 #else
+constexpr Bitboard Rank1BB = 0xFFF;
 constexpr Bitboard Rank2BB = Rank1BB << (FILE_NB * 1);
 constexpr Bitboard Rank3BB = Rank1BB << (FILE_NB * 2);
 constexpr Bitboard Rank4BB = Rank1BB << (FILE_NB * 3);
@@ -85,8 +81,6 @@ constexpr Bitboard Rank5BB = Rank1BB << (FILE_NB * 4);
 constexpr Bitboard Rank6BB = Rank1BB << (FILE_NB * 5);
 constexpr Bitboard Rank7BB = Rank1BB << (FILE_NB * 6);
 constexpr Bitboard Rank8BB = Rank1BB << (FILE_NB * 7);
-#endif
-#ifdef LARGEBOARDS
 constexpr Bitboard Rank9BB = Rank1BB << (FILE_NB * 8);
 constexpr Bitboard Rank10BB = Rank1BB << (FILE_NB * 9);
 #endif
@@ -111,10 +105,6 @@ extern RiderType AttackRiderTypes[PIECE_TYPE_NB];
 extern RiderType MoveRiderTypes[2][PIECE_TYPE_NB];
 #endif
 
-#ifdef LARGEBOARDS
-int popcount(Bitboard b); // required for 128 bit pext
-#endif
-
 // Magic holds all magic bitboards relevant data for a single square
 struct Magic {
     Bitboard  mask;
@@ -128,7 +118,7 @@ struct Magic {
         if (HasPext)
             return unsigned(pext(occupied, mask));
 
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
         return unsigned(((occupied & mask) * magic) >> shift);
 #else
         if (Is64Bit)
@@ -522,7 +512,7 @@ inline int popcount(Bitboard b) {
 
 #ifndef USE_POPCNT
 
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
   union { Bitboard bb; uint16_t u[8]; } v = { b };
   return  PopCnt16[v.u[0]] + PopCnt16[v.u[1]] + PopCnt16[v.u[2]] + PopCnt16[v.u[3]]
         + PopCnt16[v.u[4]] + PopCnt16[v.u[5]] + PopCnt16[v.u[6]] + PopCnt16[v.u[7]];
@@ -536,7 +526,7 @@ inline int popcount(Bitboard b) {
 
 #elif defined(_MSC_VER)
 
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
   return (int)_mm_popcnt_u64(uint64_t(b >> 64)) + (int)_mm_popcnt_u64(uint64_t(b));
 #else
     return int(_mm_popcnt_u64(b));
@@ -544,7 +534,7 @@ inline int popcount(Bitboard b) {
 
 #else  // Assumed gcc or compatible compiler
 
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
   return __builtin_popcountll(b >> 64) + __builtin_popcountll(b);
 #else
     return __builtin_popcountll(b);
@@ -559,9 +549,9 @@ inline Square lsb(Bitboard b) {
 
 #if defined(__GNUC__)  // GCC, Clang, ICX
 
-#ifdef LARGEBOARDS
-  if (!(b << 64))
-    return Square(__builtin_ctzll(b >> 64) + 64);
+#ifdef FAIRY_STOCKFISH
+    if (!(b << 64))
+        return Square(__builtin_ctzll(b >> 64) + 64);
 #endif
     return Square(__builtin_ctzll(b));
 
@@ -569,7 +559,7 @@ inline Square lsb(Bitboard b) {
     #ifdef _WIN64  // MSVC, WIN64
 
     unsigned long idx;
-    #ifdef LARGEBOARDS
+    #ifdef FAIRY_STOCKFISH
     if (uint64_t(b))
     {
         _BitScanForward64(&idx, uint64_t(b));
@@ -588,7 +578,7 @@ inline Square lsb(Bitboard b) {
     #else  // MSVC, WIN32
     unsigned long idx;
 
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
     if (b << 96) {
         _BitScanForward(&idx, uint32_t(b));
         return Square(idx);
@@ -605,20 +595,12 @@ inline Square lsb(Bitboard b) {
 #else
     if (b & 0xffffffff)
     {
-#ifndef FAIRY_STOCKFISH
-        _BitScanForward(&idx, int32_t(b));
-#else
-        _BitScanForward(&idx, uint32_t(b));
-#endif
+        _BitScanForward(&idx, int32_t(b));;
         return Square(idx);
     }
     else
     {
-#ifndef FAIRY_STOCKFISH
         _BitScanForward(&idx, int32_t(b >> 32));
-#else
-        _BitScanForward(&idx, uint32_t(b >> 32));
-#endif
         return Square(idx + 32);
     }
 #endif
@@ -633,21 +615,39 @@ inline Square msb(Bitboard b) {
     assert(b);
 
 #if defined(__GNUC__)  // GCC, Clang, ICX
-
+#ifndef FAIRY_STOCKFISH
     return Square(63 ^ __builtin_clzll(b));
+#else
+    if (b >> 64)
+        return Square(int(SQUARE_BIT_MASK) ^ __builtin_clzll(b >> 64));
+    return Square(int(SQUARE_BIT_MASK) ^ (__builtin_clzll(b) + 64));
+#endif
 
 #elif defined(_MSC_VER)
     #ifdef _WIN64  // MSVC, WIN64
 
     unsigned long idx;
+#ifndef FAIRY_STOCKFISH
     _BitScanReverse64(&idx, b);
     return Square(idx);
+#else
+    if (b >> 64)
+    {
+        _BitScanReverse64(&idx, uint64_t(b >> 64));
+        return Square(idx + 64);
+    }
+    else
+    {
+        _BitScanReverse64(&idx, uint64_t(b));
+        return Square(idx);
+    }
+#endif
 
     #else  // MSVC, WIN32
 
     unsigned long idx;
 
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
     if (b >> 96) {
         _BitScanReverse(&idx, uint32_t(b >> 96));
         return Square(idx + 96);
@@ -655,25 +655,25 @@ inline Square msb(Bitboard b) {
         _BitScanReverse(&idx, uint32_t(b >> 64));
         return Square(idx + 64);
     } else
-#endif
+    if (b >> 32) {
+        _BitScanReverse(&idx, uint32_t(b >> 32));
+        return Square(idx + 32);
+    } else {
+        _BitScanReverse(&idx, uint32_t(b));
+        return Square(idx);
+    }
+#else
     if (b >> 32)
     {
-#ifndef FAIRY_STOCKFISH
         _BitScanReverse(&idx, int32_t(b >> 32));
-#else
-        _BitScanReverse(&idx, uint32_t(b >> 32));
-#endif
         return Square(idx + 32);
     }
     else
     {
-#ifndef FAIRY_STOCKFISH
         _BitScanReverse(&idx, int32_t(b));
-#else
-        _BitScanReverse(&idx, uint32_t(b));
-#endif
         return Square(idx);
     }
+#endif
     #endif
 #else  // Compiler is neither GCC nor MSVC compatible
     #error "Compiler not supported."

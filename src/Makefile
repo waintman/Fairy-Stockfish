@@ -119,8 +119,6 @@ VPATH = syzygy:nnue:nnue/features
 
 
 ### 2.1. General and architecture defaults
-largeboards = yes
-all = no
 precomputedmagics = yes
 nnue = yes
 load_net = $(if $(filter $(nnue),yes),net)
@@ -420,16 +418,8 @@ ifeq ($(fairy),yes)
 endif
 # Compile version with support for large board variants
 # Use precomputed magics by default if pext is not available
-ifneq ($(largeboards),no)
-	CXXFLAGS += -DLARGEBOARDS
-	ifeq ($(precomputedmagics),yes)
-		CXXFLAGS += -DPRECOMPUTED_MAGICS
-	endif
-endif
-
-# Enable all variants, even heavyweight ones like duck and amazons
-ifneq ($(all),no)
-	CXXFLAGS += -DALLVARS
+ifeq ($(precomputedmagics),yes)
+	CXXFLAGS += -DPRECOMPUTED_MAGICS
 endif
 
 ifeq ($(COMP),)
@@ -913,11 +903,11 @@ ifneq ($(SUPPORTED_ARCH), true)
 	@echo "-------------------------------"
 	@echo "Version for large boards: "
 	@echo ""
-	@echo "make build ARCH=x86-64 COMP=gcc largeboards=yes"
+	@echo "make build ARCH=x86-64 COMP=gcc"
 	@echo ""
 	@echo "Include all variants (adds Game of the Amazons): "
 	@echo ""
-	@echo "make build ARCH=x86-64 largeboards=yes all=yes"
+	@echo "make build ARCH=x86-64"
 	@echo ""
 endif
 
@@ -1073,7 +1063,6 @@ config-sanity: $(load_net)
 	@echo "target_windows: '$(target_windows)'"
 	@echo ""
 	@echo "Fairy-Stockfish specific:"
-	@echo "largeboards: '$(largeboards)'"
 	@echo "all: '$(all)'"
 	@echo "precomputedmagics: '$(precomputedmagics)'"
 	@echo "nnue: '$(nnue)'"

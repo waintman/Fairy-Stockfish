@@ -160,7 +160,7 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
 // http://web.archive.org/web/20201107002606/https://marcelk.net/2013-04-06/paper/upcoming-rep-v2.pdf
 
 // First and second hash functions for indexing the cuckoo tables
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
 inline int H1(Key h) { return h & 0x7fff; }
 inline int H2(Key h) { return (h >> 16) & 0x7fff; }
 #else
@@ -169,7 +169,7 @@ inline int H2(Key h) { return (h >> 16) & 0x1fff; }
 #endif
 
 // Cuckoo tables with Zobrist hashes of valid reversible moves, and the moves themselves
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
 std::array<Key, 65536>  cuckoo;
 std::array<Move, 65536> cuckooMove;
 #else
@@ -256,7 +256,7 @@ void Position::init() {
 #ifdef FAIRY_STOCKFISH
         }
 #endif
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
     assert(count == 9344);
 #else
     assert(count == 3668);
@@ -339,7 +339,7 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
 #ifdef FAIRY_STOCKFISH
         {
 #endif
-#ifdef LARGEBOARDS
+#ifdef FAIRY_STOCKFISH
             if (isdigit(ss.peek()))
             {
                 sq += 10 * (token - '0') * EAST;
@@ -1156,7 +1156,7 @@ bool Position::legal(Move m) const {
     assert(m.is_ok());
 
 #ifdef FAIRY_STOCKFISH
-    assert(type_of(m) != DROP);
+    assert(m.type_of() != DROP);
 #endif
     Color  us   = sideToMove;
     Square from = m.from_sq();

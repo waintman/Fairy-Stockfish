@@ -33,11 +33,7 @@
 
 namespace Stockfish {
 
-#ifndef FAIRY_STOCKFISH
 std::string engine_info(bool to_uci = false);
-#else
-std::string engine_info(bool to_uci = false, bool to_xboard = false);
-#endif
 std::string compiler_info();
 
 // Preloads the given address in L1/L2 cache. This is a non-blocking

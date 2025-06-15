@@ -84,7 +84,6 @@ Bitboard RookTable[0x19000];   // To store rook attacks
 Bitboard BishopTable[0x1480];  // To store bishop attacks
 
 #else
-#ifdef LARGEBOARDS
 Bitboard RookTableH[0x11800];  // To store horizontal rook attacks
 Bitboard RookTableV[0x4800];  // To store vertical rook attacks
 Bitboard BishopTable[0x33C00]; // To store bishop attacks
@@ -99,22 +98,6 @@ Bitboard NightriderTable[0x70200]; // To store nightrider attacks
 Bitboard GrasshopperTableH[0x11800];  // To store horizontal grasshopper attacks
 Bitboard GrasshopperTableV[0x4800];  // To store vertical grasshopper attacks
 Bitboard GrasshopperTableD[0x33C00]; // To store diagonal grasshopper attacks
-#else
-Bitboard RookTableH[0xA00];  // To store horizontal rook attacks
-Bitboard RookTableV[0xA00];  // To store vertical rook attacks
-Bitboard BishopTable[0x1480]; // To store bishop attacks
-Bitboard CannonTableH[0xA00];  // To store horizontal cannon attacks
-Bitboard CannonTableV[0xA00];  // To store vertical cannon attacks
-Bitboard LameDabbabaTable[0x240];  // To store lame dabbaba attacks
-Bitboard HorseTable[0x240];  // To store horse attacks
-Bitboard ElephantTable[0x1A0];  // To store elephant attacks
-Bitboard JanggiElephantTable[0x5C00];  // To store janggi elephant attacks
-Bitboard CannonDiagTable[0x1480]; // To store diagonal cannon attacks
-Bitboard NightriderTable[0x1840]; // To store nightrider attacks
-Bitboard GrasshopperTableH[0xA00];  // To store horizontal grasshopper attacks
-Bitboard GrasshopperTableV[0xA00];  // To store vertical grasshopper attacks
-Bitboard GrasshopperTableD[0x1480]; // To store diagonal grasshopper attacks
-#endif
 
 // Rider directions
 const std::map<Direction, int> RookDirectionsV { {NORTH, 0}, {SOUTH, 0}};
@@ -506,16 +489,17 @@ void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> dire
 #endif
 #endif
 
-#ifndef PRECOMPUTED_MAGICS
-#ifdef LARGEBOARDS
-    int seeds[][RANK_NB] = { { 734, 10316, 55013, 32803, 12281, 15100,  16645, 255, 346, 89123 },
-                             { 734, 10316, 55013, 32803, 12281, 15100,  16645, 255, 346, 89123 } };
-#else
+#ifndef FAIRY_STOCKFISH
     // Optimal PRNG seeds to pick the correct magics in the shortest time
     int seeds[][RANK_NB] = {{8977, 44560, 54343, 38998, 5731, 95205, 104912, 17020},
                             {728, 10316, 55013, 32803, 12281, 15100, 16645, 255}};
+#else
+#ifndef PRECOMPUTED_MAGICS
+    int seeds[][RANK_NB] = { { 734, 10316, 55013, 32803, 12281, 15100,  16645, 255, 346, 89123 },
+                             { 734, 10316, 55013, 32803, 12281, 15100,  16645, 255, 346, 89123 } };
 #endif
 #endif
+
 
 #ifndef FAIRY_STOCKFISH
     Bitboard occupancy[4096], reference[4096], edges, b;
@@ -550,14 +534,11 @@ void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> dire
         Magic& m = magics[s];
 #ifndef FAIRY_STOCKFISH
         m.mask   = sliding_attack(pt, s, 0) & ~edges;
+        m.shift  = (Is64Bit ? 64 : 32) - popcount(m.mask);
 #else
         // The mask for hoppers is unlimited distance, even if the hopper is limited distance (e.g., grasshopper)
         m.mask  = (MT == LAME_LEAPER ? lame_leaper_path(directions, s) : sliding_attack<MT == HOPPER ? HOPPER_RANGE : MT>(directions, s, 0)) & ~edges;
-#endif
-#ifdef LARGEBOARDS
         m.shift = 128 - popcount(m.mask);
-#else
-        m.shift  = (Is64Bit ? 64 : 32) - popcount(m.mask);
 #endif
 
         // Set the offset for the attacks table of the square. We have individual
@@ -586,8 +567,12 @@ void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> dire
         if (HasPext)
             continue;
 
+#ifndef FAIRY_STOCKFISH
+        PRNG rng(seeds[Is64Bit][rank_of(s)]);
+#else
 #ifndef PRECOMPUTED_MAGICS
         PRNG rng(seeds[Is64Bit][rank_of(s)]);
+#endif
 #endif
 
         // Find a magic for square 's' picking up an (almost) random number
@@ -596,24 +581,16 @@ void init_magics(Bitboard table[], Magic magics[], std::map<Direction, int> dire
         {
 #ifndef FAIRY_STOCKFISH
             for (m.magic = 0; popcount((m.magic * m.mask) >> 56) < 6;)
+                m.magic = rng.sparse_rand<Bitboard>();
 #else
             for (m.magic = 0; popcount((m.magic * m.mask) >> (SQUARE_NB - FILE_NB)) < FILE_NB - 2; )
-            {
-#endif
-#ifdef LARGEBOARDS
 #ifdef PRECOMPUTED_MAGICS
                 m.magic = magicsInit[s];
 #else
                 m.magic = (rng.sparse_rand<Bitboard>() << 64) ^ rng.sparse_rand<Bitboard>();
 #endif
-#else
-                m.magic = rng.sparse_rand<Bitboard>();
 #endif
 
-#ifdef FAIRY_STOCKFISH
-            }
-
-#endif
             // A good magic must map every possible occupancy to an index that
             // looks up the correct sliding attack in the attacks[s] database.
             // Note that we build up the database for square 's' as a side
