@@ -199,9 +199,9 @@ void MovePicker::score() {
               7 * int(PieceValue[pos.piece_on(m.to_sq())])
               + (*captureHistory)[pos.moved_piece(m)][m.to_sq()][type_of(pos.piece_on(m.to_sq()))];
 #else
-            m.value =  int(PieceValue[MG][pos.piece_on(to_sq(m))]) * 6
+            m.value =  int(PieceValue[MG][pos.piece_on(m.to_sq())]) * 6
               + (*gateHistory)[pos.side_to_move()][gating_square(m)]
-              + (*captureHistory)[pos.moved_piece(m)][to_sq(m)][type_of(pos.piece_on(to_sq(m)))];
+              + (*captureHistory)[pos.moved_piece(m)][m.to_sq()][type_of(pos.piece_on(m.to_sq()))];
 #endif
 
         else if constexpr (Type == QUIETS)
@@ -222,10 +222,10 @@ void MovePicker::score() {
             m.value += (*continuationHistory[5])[pc][to];
 #else
             m.value += (*gateHistory)[pos.side_to_move()][gating_square(m)];
-            m.value += 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)];
-            m.value += (*continuationHistory[1])[history_slot(pos.moved_piece(m))][to_sq(m)];
-            m.value += (*continuationHistory[3])[history_slot(pos.moved_piece(m))][to_sq(m)];
-            m.value += (*continuationHistory[5])[history_slot(pos.moved_piece(m))][to_sq(m)];
+            m.value += 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][m.to_sq()];
+            m.value += (*continuationHistory[1])[history_slot(pos.moved_piece(m))][m.to_sq()];
+            m.value += (*continuationHistory[3])[history_slot(pos.moved_piece(m))][m.to_sq()];
+            m.value += (*continuationHistory[5])[history_slot(pos.moved_piece(m))][m.to_sq()];
 #endif
 
             // bonus for checks
@@ -255,7 +255,7 @@ void MovePicker::score() {
                 m.value =
                   PieceValue[pos.piece_on(m.to_sq())] - type_of(pos.moved_piece(m)) + (1 << 28);
 #else
-                m.value =  PieceValue[MG][pos.piece_on(to_sq(m))]
+                m.value =  PieceValue[MG][pos.piece_on(m.to_sq())]
                   - Value(type_of(pos.moved_piece(m)));
 #endif
             else
@@ -264,8 +264,8 @@ void MovePicker::score() {
                         + (*continuationHistory[0])[pos.moved_piece(m)][m.to_sq()]
                         + (*pawnHistory)[pawn_structure_index(pos)][pos.moved_piece(m)][m.to_sq()];
 #else
-                m.value =      (*mainHistory)[pos.side_to_move()][from_to(m)]
-                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][to_sq(m)]
+                m.value =      (*mainHistory)[pos.side_to_move()][m.from_to()]
+                        + 2 * (*continuationHistory[0])[history_slot(pos.moved_piece(m))][m.to_sq()]
                         - (1 << 28);
 #endif
         }
@@ -327,7 +327,7 @@ top:
 #ifndef FAIRY_STOCKFISH
                 return pos.see_ge(*cur, -cur->value / 18) ?
 #else
-                return pos.see_ge(*cur, Value(-cur->value - 500 * (pos.captures_to_hand() && pos.gives_check(*cur)))) ?
+                return pos.see_ge(*cur, Value(-cur->value)) ?
 #endif
                                                          true : (*endBadCaptures++ = *cur, false);
             }))
@@ -353,11 +353,7 @@ top:
         [[fallthrough]];
 
     case QUIET_INIT :
-#ifndef FAIRY_STOCKFISH
         if (!skipQuiets)
-#else
-        if (!skipQuiets && !(pos.must_capture() && pos.has_capture()))
-#endif
         {
             cur      = endBadCaptures;
             endMoves = beginBadQuiets = endBadQuiets = generate<QUIETS>(pos, cur);

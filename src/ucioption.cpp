@@ -46,17 +46,6 @@ namespace PSQT {
 }
 
 std::string option_name(std::string name) {
-  if (CurrentProtocol == UCCI && name == "Hash")
-      return "hashsize";
-  if (CurrentProtocol == USI)
-  {
-      if (name == "Hash" || name == "Ponder" || name == "MultiPV")
-          return "USI_" + name;
-      if (name.substr(0, 4) == "UCI_")
-          name = "USI_" + name.substr(4);
-  }
-  if (CurrentProtocol == UCCI || CurrentProtocol == USI)
-      std::replace(name.begin(), name.end(), ' ', '_');
   return name;
 }
 
@@ -87,11 +76,6 @@ void OptionsMap::setoption(std::istringstream& is) {
 
     is >> token;  // Consume the "name" token
 
-#ifdef FAIRY_STOCKFISH
-    if (CurrentProtocol == UCCI)
-        name = token;
-    else
-#endif
     // Read the option name (can contain spaces)
     while (is >> token && token != "value")
         name += (name.empty() ? "" : " ") + token;
@@ -257,16 +241,6 @@ std::ostream& operator<<(std::ostream& os, const OptionsMap& om) {
             if (it.second.idx == idx)
             {
                 const Option& o = it.second;
-#ifdef FAIRY_STOCKFISH
-              // UCI dialects do not allow spaces
-              if (CurrentProtocol == UCCI || CurrentProtocol == USI)
-              {
-                  string name = option_name(it.first);
-                  // UCCI skips "name"
-                  os << "\noption " << (CurrentProtocol == UCCI ? "" : "name ") << name << " type " << o.type;
-              }
-              else
-#endif
                 os << "\noption name " << it.first << " type " << o.type;
 
                 if (o.type == "string" || o.type == "check" || o.type == "combo")

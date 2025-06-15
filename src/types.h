@@ -931,21 +931,53 @@ class Move {
 
     constexpr Square from_sq() const {
         assert(is_ok());
+#ifndef FAIRY_STOCKFISH
         return Square((data >> 6) & 0x3F);
+#else
+        return type_of() == DROP ? SQ_NONE : Square((data >> SQUARE_BITS) & SQUARE_BIT_MASK);
+#endif
     }
 
     constexpr Square to_sq() const {
         assert(is_ok());
+#ifndef FAIRY_STOCKFISH
         return Square(data & 0x3F);
+#else
+        return Square(data & SQUARE_BIT_MASK);
+#endif
     }
 
-    constexpr int from_to() const { return data & 0xFFF; }
+    constexpr int from_to() const {
+#ifndef FAIRY_STOCKFISH
+        return data & 0xFFF;
+#else
+        return to_sq() + (from_sq() << SQUARE_BITS);
+#endif
+    }
 
-    constexpr MoveType type_of() const { return MoveType(data & (3 << 14)); }
+    constexpr MoveType type_of() const {
+#ifndef FAIRY_STOCKFISH
+        return MoveType(data & (3 << 14));
+#else
+        return MoveType(data & (15 << (2 * SQUARE_BITS)));
+#endif
+    }
 
-    constexpr PieceType promotion_type() const { return PieceType(((data >> 12) & 3) + KNIGHT); }
+    constexpr PieceType promotion_type() const {
+#ifndef FAIRY_STOCKFISH
+        return PieceType(((data >> 12) & 3) + KNIGHT);
+#else
+        return type_of() == PROMOTION ? PieceType((data >> (2 * SQUARE_BITS + MOVE_TYPE_BITS)) & (PIECE_TYPE_NB - 1)) : NO_PIECE_TYPE;
+#endif
+    }
 
-    constexpr bool is_ok() const { return none().data != data && null().data != data; }
+    constexpr bool is_ok() const {
+#ifndef FAIRY_STOCKFISH
+        return none().data != data && null().data != data;
+#else
+        return (none().data != data && null().data != data) || type_of() == PROMOTION || type_of() == SPECIAL;
+#endif
+    }
 
     static constexpr Move null() {
 #ifndef FAIRY_STOCKFISH
@@ -979,30 +1011,6 @@ class Move {
 #endif
 };
 #ifdef FAIRY_STOCKFISH
-constexpr MoveType type_of(Move m) {
-  return MoveType(m.raw() & (15 << (2 * SQUARE_BITS)));
-}
-
-inline bool is_ok(Move m) {
-  return (m != Move::none() && m != Move::null()) || type_of(m) == PROMOTION || type_of(m) == SPECIAL; // Catch MOVE_NULL and MOVE_NONE
-}
-
-constexpr Square to_sq(Move m) {
-  assert(is_ok(m));
-  return Square(m.raw() & SQUARE_BIT_MASK);
-}
-
-constexpr Square from_sq(Move m) {
-  return type_of(m) == DROP ? SQ_NONE : Square((m.raw() >> SQUARE_BITS) & SQUARE_BIT_MASK);
-}
-
-inline int from_to(Move m) {
- return to_sq(m) + (from_sq(m) << SQUARE_BITS);
-}
-
-inline PieceType promotion_type(Move m) {
-  return type_of(m) == PROMOTION ? PieceType((m.raw() >> (2 * SQUARE_BITS + MOVE_TYPE_BITS)) & (PIECE_TYPE_NB - 1)) : NO_PIECE_TYPE;
-}
 
 inline PieceType gating_type(Move m) {
   return PieceType((m.raw() >> (2 * SQUARE_BITS + MOVE_TYPE_BITS)) & (PIECE_TYPE_NB - 1));
@@ -1013,11 +1021,11 @@ inline Square gating_square(Move m) {
 }
 
 inline bool is_gating(Move m) {
-  return gating_type(m) && (type_of(m) == NORMAL || type_of(m) == CASTLING);
+  return gating_type(m) && (m.type_of() == NORMAL || m.type_of() == CASTLING);
 }
 
 inline bool is_pass(Move m) {
-  return type_of(m) == SPECIAL && from_sq(m) == to_sq(m);
+  return m.type_of() == SPECIAL && m.from_sq() == m.to_sq();
 }
 
 constexpr Move make_move(Square from, Square to) {
@@ -1030,7 +1038,7 @@ inline Move make(Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
 }
 
 constexpr Move reverse_move(Move m) {
-  return make_move(to_sq(m), from_sq(m));
+  return make_move(m.to_sq(), m.from_sq());
 }
 
 constexpr Move make_drop(Square to, PieceType pt_in_hand, PieceType pt_dropped) {

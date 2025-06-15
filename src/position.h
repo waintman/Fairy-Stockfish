@@ -86,7 +86,6 @@ struct StateInfo {
     bool       capturedpromoted;
     bool       shak;
     bool       bikjang;
-    Bitboard   chased;
     bool       pass;
     Move       move;
 #endif
@@ -148,17 +147,10 @@ class Position {
     bool sittuyin_promotion() const;
     int promotion_limit(PieceType pt) const;
     PieceType promoted_piece_type(PieceType pt) const;
-    bool piece_promotion_on_capture() const;
     bool mandatory_pawn_promotion() const;
-    bool mandatory_piece_promotion() const;
-    bool piece_demotion() const;
     PieceSet blast_immune_types() const;
     PieceSet mutually_immune_types() const;
     EndgameEval endgame_eval() const;
-    Bitboard double_step_region(Color c) const;
-    Bitboard triple_step_region(Color c) const;
-    bool castling_enabled() const;
-    bool castling_dropped_piece() const;
     File castling_kingside_file() const;
     File castling_queenside_file() const;
     Rank castling_rank(Color c) const;
@@ -170,14 +162,10 @@ class Position {
     Square nnue_king_square(Color c) const;
     bool nnue_use_pockets() const;
     bool nnue_applicable() const;
-    bool checking_permitted() const;
-    bool drop_checks() const;
-    bool must_capture() const;
     bool has_capture() const;
     bool must_drop() const;
     bool piece_drops() const;
     bool drop_loop() const;
-    bool captures_to_hand() const;
     bool first_rank_pawn_drops() const;
     bool can_drop(Color c, PieceType pt) const;
     EnclosingRule enclosing_drop() const;
@@ -185,11 +173,8 @@ class Position {
     Bitboard drop_region(Color c, PieceType pt) const;
     bool sittuyin_rook_drop() const;
     bool drop_opposite_colored_bishop() const;
-    bool drop_promoted() const;
     PieceType drop_no_doubled() const;
     bool immobility_illegal() const;
-    bool gating() const;
-    bool seirawan_gating() const;
     bool cambodian_moves() const;
     Bitboard diagonal_lines() const;
     bool pass(Color c) const;
@@ -356,7 +341,6 @@ class Position {
     bool  has_game_cycle(int ply) const;
     bool  has_repeated() const;
 #ifdef FAIRY_STOCKFISH
-    Bitboard chased() const;
     int count_limit(Color sideToCount) const;
     int board_honor_counting_ply(int countStarted) const;
     bool board_honor_counting_shorter(int countStarted) const;
@@ -518,24 +502,9 @@ inline PieceType Position::promoted_piece_type(PieceType pt) const {
     return var->promotedPieceType[pt];
 }
 
-inline bool Position::piece_promotion_on_capture() const {
-    assert(var != nullptr);
-    return var->piecePromotionOnCapture;
-}
-
 inline bool Position::mandatory_pawn_promotion() const {
     assert(var != nullptr);
     return var->mandatoryPawnPromotion;
-}
-
-inline bool Position::mandatory_piece_promotion() const {
-    assert(var != nullptr);
-    return var->mandatoryPiecePromotion;
-}
-
-inline bool Position::piece_demotion() const {
-    assert(var != nullptr);
-    return var->pieceDemotion;
 }
 
 inline PieceSet Position::blast_immune_types() const {
@@ -551,26 +520,6 @@ inline PieceSet Position::mutually_immune_types() const {
 inline EndgameEval Position::endgame_eval() const {
     assert(var != nullptr);
     return !count_in_hand(ALL_PIECES) && (var->endgameEval != EG_EVAL_CHESS || count<KING>() == 2) ? var->endgameEval : NO_EG_EVAL;
-}
-
-inline Bitboard Position::double_step_region(Color c) const {
-    assert(var != nullptr);
-    return var->doubleStepRegion[c];
-}
-
-inline Bitboard Position::triple_step_region(Color c) const {
-    assert(var != nullptr);
-    return var->tripleStepRegion[c];
-}
-
-inline bool Position::castling_enabled() const {
-    assert(var != nullptr);
-    return var->castling;
-}
-
-inline bool Position::castling_dropped_piece() const {
-    assert(var != nullptr);
-    return var->castlingDroppedPiece;
 }
 
 inline File Position::castling_kingside_file() const {
@@ -627,21 +576,6 @@ inline bool Position::nnue_applicable() const {
     return (!count_in_hand(ALL_PIECES) || nnue_use_pockets() || !must_drop()) && !virtualPieces;
 }
 
-inline bool Position::checking_permitted() const {
-    assert(var != nullptr);
-    return var->checking;
-}
-
-inline bool Position::drop_checks() const {
-    assert(var != nullptr);
-    return var->dropChecks;
-}
-
-inline bool Position::must_capture() const {
-    assert(var != nullptr);
-    return var->mustCapture;
-}
-
 inline bool Position::has_capture() const {
     // Check for cached value
     if (st->legalCapture != NO_VALUE)
@@ -681,11 +615,6 @@ inline bool Position::piece_drops() const {
 inline bool Position::drop_loop() const {
     assert(var != nullptr);
     return var->dropLoop;
-}
-
-inline bool Position::captures_to_hand() const {
-    assert(var != nullptr);
-    return var->capturesToHand;
 }
 
 inline bool Position::first_rank_pawn_drops() const {
@@ -811,11 +740,6 @@ inline bool Position::drop_opposite_colored_bishop() const {
     return var->dropOppositeColoredBishop;
 }
 
-inline bool Position::drop_promoted() const {
-    assert(var != nullptr);
-    return var->dropPromoted;
-}
-
 inline PieceType Position::drop_no_doubled() const {
     assert(var != nullptr);
     return var->dropNoDoubled;
@@ -824,16 +748,6 @@ inline PieceType Position::drop_no_doubled() const {
 inline bool Position::immobility_illegal() const {
     assert(var != nullptr);
     return var->immobilityIllegal;
-}
-
-inline bool Position::gating() const {
-    assert(var != nullptr);
-    return var->gating;
-}
-
-inline bool Position::seirawan_gating() const {
-    assert(var != nullptr);
-    return var->seirawanGating;
 }
 
 inline bool Position::cambodian_moves() const {
@@ -1132,7 +1046,7 @@ inline bool Position::empty(Square s) const { return piece_on(s) == NO_PIECE; }
 
 inline Piece Position::moved_piece(Move m) const {
 #ifdef FAIRY_STOCKFISH
-    if (type_of(m) == DROP)
+    if (m.type_of() == DROP)
         return make_piece(sideToMove, dropped_piece_type(m));
 #endif
     return piece_on(m.from_sq());
@@ -1261,9 +1175,6 @@ inline Bitboard Position::moves_from(Color c, PieceType pt, Square s) const {
 
     PieceType movePt = pt == KING ? king_type() : pt;
     Bitboard b = moves_bb(c, movePt, s, byTypeBB[ALL_PIECES]);
-    // Add initial moves
-    if (double_step_region(c) & s)
-        b |= moves_bb<true>(c, movePt, s, byTypeBB[ALL_PIECES]);
     // Xiangqi soldier
     if (pt == SOLDIER && !(promoted_soldiers(c) & s))
         b &= file_bb(file_of(s));
@@ -1392,8 +1303,8 @@ inline Square Position::capture_square(Square to) const {
 }
 
 inline bool Position::virtual_drop(Move m) const {
-    assert(is_ok(m));
-    return type_of(m) == DROP && !can_drop(side_to_move(), in_hand_piece_type(m));
+    assert(m.is_ok());
+    return m.type_of() == DROP && !can_drop(side_to_move(), in_hand_piece_type(m));
 }
 
 #endif
@@ -1426,7 +1337,7 @@ inline Bitboard Position::fog_area() const {
     // Squares where we can move to are visible as well
     for (const auto& m : MoveList<LEGAL>(*this))
     {
-      Square to = to_sq(m);
+      Square to = m.to_sq();
       visible |= to;
     }
     // Everything else is invisible

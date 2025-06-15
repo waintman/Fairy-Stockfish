@@ -81,8 +81,8 @@ void on_variant_change(const Option &o) {
     // Do not send setup command for known variants
     if (standard_variants.find(o) != standard_variants.end())
         return;
-    int pocketsize = v->pieceDrops ? (v->pocketSize ? v->pocketSize : popcount(v->pieceTypes)) : 0;
-    
+    int pocketsize = 0;
+
     sync_cout << "info string variant " << (std::string)o
             << " files " << v->maxFile + 1
             << " ranks " << v->maxRank + 1
@@ -269,39 +269,20 @@ void UCI::loop() {
         else if (token == "ponderhit")
             threads.main_manager()->ponder = false;  // Switch to the normal search
 
-#ifndef FAIRY_STOCKFISH
         else if (token == "uci")
+#ifndef FAIRY_STOCKFISH
             sync_cout << "id name " << engine_info(true) << "\n"
                       << options << "\nuciok" << sync_endl;
 #else
-        else if (token == "uci" || token == "usi" || token == "ucci" || token == "xboard" || token == "ucicyclone")
         {
-            CurrentProtocol =  token == "uci"  ? (CurrentProtocol == UCI_CYCLONE ? UCI_CYCLONE : UCI_GENERAL)
-                            : token == "ucicyclone" ? UCI_CYCLONE
-                            : token == "usi"  ? USI
-                            : token == "ucci" ? UCCI
-                            : XBOARD;
-            std::string defaultVariant = std::string(
-#ifdef LARGEBOARDS
-                                           CurrentProtocol == USI  ? "shogi"
-                                         : CurrentProtocol == UCCI || CurrentProtocol == UCI_CYCLONE ? "xiangqi"
-#else
-                                           CurrentProtocol == USI  ? "minishogi"
-                                         : CurrentProtocol == UCCI || CurrentProtocol == UCI_CYCLONE ? "minixiangqi"
-#endif
-                                                           : "janggimodern");
-            options["UCI_Variant"].set_default(defaultVariant);
             std::istringstream ss("startpos");
             position(pos, ss, states);
-            if (is_uci_dialect(CurrentProtocol) && token != "ucicyclone")
-                sync_cout << "id name " << engine_info(true)
-                            << "\n" << options
-                            << "\n" << token << "ok"  << sync_endl;
-
-            // Allow to enforce protocol at startup
+            sync_cout << "id name " << engine_info(true)
+                      << "\n" << options
+                      << "\n" << token << "ok"  << sync_endl;
+          // Allow to enforce protocol at startup
             cli.argc = 1;
         }
-
 #endif
 
         else if (token == "setoption")
@@ -365,16 +346,9 @@ void UCI::loop() {
         // UCI-Cyclone omits the "position" keyword
         else if (token == "fen" || token == "startpos")
         {
-#ifdef LARGEBOARDS
-            if (CurrentProtocol == UCI_GENERAL && options["UCI_Variant"] == "chess")
-            {
-                CurrentProtocol = UCI_CYCLONE;
-                options["UCI_Variant"].set_default("xiangqi");
-            }
-#endif
             is.seekg(0);
             position(pos, is, states);
-      }
+        }
 #endif
         else if (!token.empty() && token[0] != '#')
             sync_cout << "Unknown command: '" << cmd << "'. Type help for more information."
@@ -397,7 +371,7 @@ void UCI::go(Position& pos, std::istringstream& is, StateListPtr& states, const 
 
 #ifdef FAIRY_STOCKFISH
     limits.banmoves = banmoves;
-    bool isUsi = CurrentProtocol == USI;
+    bool isUsi = false;
     int secResolution = options["usemillisec"] ? 1 : 1000;
 #endif
 
@@ -605,39 +579,17 @@ std::string UCI::value(Value v) {
 
     std::stringstream ss;
 
-#ifdef FAIRY_STOCKFISH
-    if (CurrentProtocol == XBOARD)
-    {
-        if (abs(v) < VALUE_MATE_IN_MAX_PLY)
-            ss << to_cp(v);
-        else
-            ss << (v > 0 ? XBOARD_VALUE_MATE + VALUE_MATE - v + 1 : -XBOARD_VALUE_MATE - VALUE_MATE - v - 1) / 2;
-    } else
-#endif
     if (std::abs(v) < VALUE_TB_WIN_IN_MAX_PLY)
-#ifndef FAIRY_STOCKFISH
         ss << "cp " << to_cp(v);
-#else
-        ss << (CurrentProtocol == UCCI ? "" : "cp ") << to_cp(v);
-#endif
+
     else if (std::abs(v) <= VALUE_TB)
     {
         const int ply = VALUE_TB - std::abs(v);  // recompute ss->ply
-#ifndef FAIRY_STOCKFISH
         ss << "cp " << (v > 0 ? 20000 - ply : -20000 + ply);
-#else
-        ss << (CurrentProtocol == UCCI ? "" : "cp ") << (v > 0 ? 20000 - ply : -20000 + ply);
-#endif
     }
-#ifdef FAIRY_STOCKFISH
-    else if (CurrentProtocol == USI)
-        // In USI, mate distance is given in ply
-        ss << "mate " << (v > 0 ? VALUE_MATE - v : -VALUE_MATE - v);
-#endif
     else
 #ifndef FAIRY_STOCKFISH
         ss << "mate " << (v > 0 ? VALUE_MATE - v + 1 : -VALUE_MATE - v) / 2;
-
 #else
         ss << "mate " << (v > 0 ? VALUE_MATE - v + 1 : -VALUE_MATE - v - 1) / 2;
 #endif
@@ -665,20 +617,11 @@ std::string UCI::square(Square s) {
 #else
 std::string UCI::square(const Position& pos, Square s) {
 #ifdef LARGEBOARDS
-    if (CurrentProtocol == USI)
-        return rank_of(s) < RANK_10 ? std::string{ char('1' + pos.max_file() - file_of(s)), char('a' + pos.max_rank() - rank_of(s)) }
-                                    : std::string{ char('0' + (pos.max_file() - file_of(s) + 1) / 10),
-                                                   char('0' + (pos.max_file() - file_of(s) + 1) % 10),
-                                                   char('a' + pos.max_rank() - rank_of(s)) };
-    else if (pos.max_rank() == RANK_10 && CurrentProtocol != UCI_GENERAL)
-        return std::string{ char('a' + file_of(s)), char('0' + rank_of(s)) };
-    else
         return rank_of(s) < RANK_10 ? std::string{ char('a' + file_of(s)), char('1' + (rank_of(s) % 10)) }
                                     : std::string{ char('a' + file_of(s)), char('0' + ((rank_of(s) + 1) / 10)),
                                                    char('0' + ((rank_of(s) + 1) % 10)) };
 #else
-    return CurrentProtocol == USI ? std::string{ char('1' + pos.max_file() - file_of(s)), char('a' + pos.max_rank() - rank_of(s)) }
-                                  : std::string{ char('a' + file_of(s)), char('1' + rank_of(s)) };
+    return std::string{ char('1' + pos.max_file() - file_of(s)), char('a' + pos.max_rank() - rank_of(s)) };
 #endif
 }
 #endif
@@ -689,12 +632,8 @@ std::string UCI::move(Move m, bool chess960) {
 std::string UCI::move(const Position& pos, Move m) {
 #endif
     if (m == Move::none())
-#ifndef FAIRY_STOCKFISH
         return "(none)";
 
-#else
-        return CurrentProtocol == USI ? "resign" : "(none)";
-#endif
     if (m == Move::null())
         return "0000";
 
@@ -705,24 +644,21 @@ std::string UCI::move(const Position& pos, Move m) {
     if (m.type_of() == CASTLING && !chess960)
         to = make_square(to > from ? FILE_G : FILE_C, rank_of(from));
 #else
-    if (is_pass(m) && CurrentProtocol == XBOARD)
-        return "@@@@";
-
     if (is_gating(m) && gating_square(m) == to)
-        from = to_sq(m), to = from_sq(m);
-    else if (type_of(m) == CASTLING && !pos.is_chess960())
+        from = m.to_sq(), to = m.from_sq();
+    else if (m.type_of() == CASTLING && !pos.is_chess960())
     {
         to = make_square(to > from ? pos.castling_kingside_file() : pos.castling_queenside_file(), rank_of(from));
         // If the castling move is ambiguous with a normal king move, switch to 960 notation
         if (pos.pseudo_legal(make_move(from, to)))
-            to = to_sq(m);
+            to = m.to_sq();
     }
 #endif
 
 #ifndef FAIRY_STOCKFISH
     std::string move = square(from) + square(to);
 #else
-    std::string move = (type_of(m) == DROP ? UCI::dropped_piece(pos, m) + (CurrentProtocol == USI ? '*' : '@')
+    std::string move = (m.type_of() == DROP ? UCI::dropped_piece(pos, m) + '@'
                                     : UCI::square(pos, from)) + UCI::square(pos, to);
 
 #endif
@@ -731,10 +667,10 @@ std::string UCI::move(const Position& pos, Move m) {
 #ifndef FAIRY_STOCKFISH
         move += " pnbrqk"[m.promotion_type()];
 #else
-        move += pos.piece_to_char()[make_piece(BLACK, promotion_type(m))];
-        else if (type_of(m) == PIECE_PROMOTION)
+        move += pos.piece_to_char()[make_piece(BLACK, m.promotion_type( ))];
+        else if (m.type_of() == PIECE_PROMOTION)
             move += '+';
-        else if (type_of(m) == PIECE_DEMOTION)
+        else if (m.type_of() == PIECE_DEMOTION)
             move += '-';
         else if (is_gating(m))
         {
@@ -772,13 +708,6 @@ int win_rate_model(Value v, int ply) {
 }
 }
 
-#ifdef FAIRY_STOCKFISH
-
-
-
-Protocol CurrentProtocol = UCI_GENERAL; // Global object
-#endif
-
 std::string UCI::wdl(Value v, int ply) {
     std::stringstream ss;
 
@@ -807,7 +736,7 @@ Move UCI::to_move(const Position& pos, std::string& str) {
 #ifndef FAIRY_STOCKFISH
         if (str == move(m, pos.is_chess960()))
 #else
-        if (str == UCI::move(pos, m) || (is_pass(m) && str == UCI::square(pos, from_sq(m)) + UCI::square(pos, to_sq(m))))
+        if (str == UCI::move(pos, m) || (is_pass(m) && str == UCI::square(pos, m.from_sq()) + UCI::square(pos, m.to_sq())))
 #endif
             return m;
 

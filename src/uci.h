@@ -110,23 +110,6 @@ std::string pv(const Position& pos, Depth depth);
 std::string wdl(Value v, int ply);
 Move to_move(const Position& pos, std::string& str);
 
-#ifdef FAIRY_STOCKFISH
-enum Protocol {
-  UCI_GENERAL,
-  USI,
-  UCCI,
-  UCI_CYCLONE,
-  XBOARD,
-};
-
-constexpr bool is_uci_dialect(Protocol p) {
-  return p != XBOARD;
-}
-
-extern Protocol CurrentProtocol;
-#endif
-
-
 }  // namespace Stockfish
 
 #endif  // #ifndef UCI_H_INCLUDED

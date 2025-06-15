@@ -167,11 +167,7 @@ void Search::Worker::start_searching() {
 #endif
     tt.new_search();
 
-#ifndef FAIRY_STOCKFISH
     if (rootMoves.empty())
-#else
-    if (rootMoves.empty() || (CurrentProtocol == XBOARD && rootPos.is_optional_game_end()))
-#endif
     {
         rootMoves.emplace_back(Move::none());
 #ifdef FAIRY_STOCKFISH
@@ -179,16 +175,6 @@ void Search::Worker::start_searching() {
       Value result =  rootPos.is_game_end(variantResult) ? variantResult
                     : rootPos.checkers()                 ? rootPos.checkmate_value()
                                                          : rootPos.stalemate_value();
-      if (CurrentProtocol == XBOARD)
-      {
-          // rotate MOVE_NONE to front (for optional game end)
-          std::rotate(rootMoves.rbegin(), rootMoves.rbegin() + 1, rootMoves.rend());
-          sync_cout << (  result == VALUE_DRAW ? "1/2-1/2 {Draw}"
-                        : (rootPos.side_to_move() == BLACK ? -result : result) == VALUE_MATE ? "1-0 {White wins}"
-                        : "0-1 {Black wins}")
-                    << sync_endl;
-      }
-      else
 #endif
         sync_cout << "info depth 0 score "
 #ifndef FAIRY_STOCKFISH
@@ -351,11 +337,7 @@ void Search::Worker::iterative_deepening() {
 
             // Reset aspiration window starting size
             Value avg = rootMoves[pvIdx].averageScore;
-#ifndef FAIRY_STOCKFISH
             delta     = 9 + avg * avg / 12487;
-#else
-            delta     = 9 * (1 + rootPos.captures_to_hand()) + avg * avg / 12487;
-#endif
             alpha     = std::max(avg - delta, -VALUE_INFINITE);
             beta      = std::min(avg + delta, VALUE_INFINITE);
 
@@ -821,12 +803,7 @@ Value Search::Worker::search(
     improving = (ss - 2)->staticEval != VALUE_NONE
                 ? ss->staticEval > (ss - 2)->staticEval
                 : (ss - 4)->staticEval != VALUE_NONE && ss->staticEval > (ss - 4)->staticEval;
-#ifdef FAIRY_STOCKFISH
-    // Skip early pruning in case of mandatory capture
-    if (pos.must_capture() && pos.has_capture())
-        goto moves_loop;
 
-#endif
     // Step 7. Razoring (~1 Elo)
     // If eval is really low check with qsearch if it can exceed alpha, if it can't,
     // return a fail low.
@@ -854,7 +831,7 @@ Value Search::Worker::search(
 #ifndef FAIRY_STOCKFISH
         && ss->staticEval >= beta - 21 * depth + 330
 #else
-        && ss->staticEval >= beta - 21 * depth + 330 + 200 * (!pos.double_step_region(pos.side_to_move()) && (pos.piece_types() & PAWN))
+        && ss->staticEval >= beta - 21 * depth + 330 + 200 * ((pos.piece_types() & PAWN))
 #endif
         && !excludedMove && pos.non_pawn_material(us)
 #ifdef FAIRY_STOCKFISH
@@ -867,11 +844,7 @@ Value Search::Worker::search(
         assert(eval - beta >= 0);
 
         // Null move dynamic reduction based on depth and eval
-#ifndef FAIRY_STOCKFISH
         Depth R = std::min(int(eval - beta) / 154, 6) + depth / 3 + 4;
-#else
-        Depth R = std::min(int(eval - beta) / 154, pos.must_capture() ? 0 : 6) + depth / 3 + 4;
-#endif
 
         ss->currentMove         = Move::null();
         ss->continuationHistory = &thisThread->continuationHistory[0][0][NO_PIECE][0];
@@ -924,7 +897,7 @@ Value Search::Worker::search(
 #ifndef FAIRY_STOCKFISH
     probCutBeta = beta + 181 - 68 * improving;
 #else
-    probCutBeta = beta + (181 + 20 * !!pos.flag_region(~pos.side_to_move()) + 50 * pos.captures_to_hand()) * (1 + pos.check_counting() + pos.extinction_single_piece()) - 68 * improving;
+    probCutBeta = beta + (181 + 20 * !!pos.flag_region(~pos.side_to_move())) * (1 + pos.check_counting() + pos.extinction_single_piece()) - 68 * improving;
 #endif
     if (
       !PvNode && depth > 3
@@ -1045,7 +1018,7 @@ moves_loop:  // When in check, search starts here
             && main_manager()->tm.elapsed(threads.nodes_searched()) > 3000)
 #else
         if (rootNode && is_mainthread()
-            && main_manager()->tm.elapsed(threads.nodes_searched()) > 3000 && is_uci_dialect(CurrentProtocol))
+            && main_manager()->tm.elapsed(threads.nodes_searched()) > 3000)
 #endif
             sync_cout << "info depth " << depth << " currmove "
 #ifndef FAIRY_STOCKFISH
@@ -1086,11 +1059,6 @@ moves_loop:  // When in check, search starts here
             // Reduced depth of the next LMR search
             int lmrDepth = newDepth - r;
 
-#ifdef FAIRY_STOCKFISH
-            if (pos.must_capture() && pos.attackers_to(to_sq(move), ~us))
-            {}
-            else
-#endif
             if (capture || givesCheck)
             {
 #ifndef FAIRY_STOCKFISH
@@ -1108,16 +1076,12 @@ moves_loop:  // When in check, search starts here
 #else
                 if (   !givesCheck
                     && lmrDepth < 1
-                    && captureHistory[movedPiece][to_sq(move)][type_of(pos.piece_on(to_sq(move)))] < 0)
+                    && captureHistory[movedPiece][move.to_sq()][type_of(pos.piece_on(move.to_sq()))] < 0)
                     continue;
 #endif
 
                 // SEE based pruning for captures and checks (~11 Elo)
-#ifndef FAIRY_STOCKFISH
                 if (!pos.see_ge(move, -197 * depth))
-#else
-                if (!pos.see_ge(move, (-197 - 120 * pos.captures_to_hand()) * depth))
-#endif
                     continue;
             }
             else
@@ -1684,11 +1648,6 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta,
         {
             // Futility pruning and moveCount pruning (~10 Elo)
             if (!givesCheck
-#ifdef FAIRY_STOCKFISH
-                && !(pos.extinction_value() == -VALUE_MATE
-                && pos.piece_on(to_sq(move))
-                && (pos.extinction_piece_types() & type_of(pos.piece_on(to_sq(move)))))
-#endif
                 && move.to_sq() != prevSq && futilityBase > VALUE_TB_LOSS_IN_MAX_PLY
                 && move.type_of() != PROMOTION)
             {
@@ -1698,7 +1657,7 @@ Value Search::Worker::qsearch(Position& pos, Stack* ss, Value alpha, Value beta,
 #ifndef FAIRY_STOCKFISH
                 futilityValue = futilityBase + PieceValue[pos.piece_on(move.to_sq())];
 #else
-                futilityValue = futilityBase + PieceValue[EG][pos.piece_on(to_sq(move))];
+                futilityValue = futilityBase + PieceValue[EG][pos.piece_on(move.to_sq())];
 #endif
 
                 // If static eval + value of piece we are going to capture is much lower

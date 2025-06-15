@@ -334,13 +334,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     }
     Rank doubleStepRank = RANK_2;
     Rank doubleStepRankMin = RANK_2;
-    if (   parse_attribute<false>("doubleStepRank", doubleStepRank)
-        || parse_attribute<false>("doubleStepRankMin", doubleStepRankMin))
-    {
-        for (Color c : {WHITE, BLACK})
-            v->doubleStepRegion[c] =   zone_bb(c, doubleStepRankMin, v->maxRank)
-                                    & ~forward_ranks_bb(c, relative_rank(c, doubleStepRank, v->maxRank));
-    }
     parse_attribute<false>("whiteFlag", v->flagRegion[WHITE]);
     parse_attribute<false>("blackFlag", v->flagRegion[BLACK]);
     parse_attribute<false>("castlingRookPiece", v->castlingRookPieces[WHITE], v->pieceToChar);
@@ -409,26 +402,16 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         if (DoCheck && (idx == std::string::npos || idx2 == std::string::npos))
             std::cerr << "promotedPieceType - Invalid piece type: " << token << std::endl;
     }
-    parse_attribute("piecePromotionOnCapture", v->piecePromotionOnCapture);
     parse_attribute("mandatoryPawnPromotion", v->mandatoryPawnPromotion);
-    parse_attribute("mandatoryPiecePromotion", v->mandatoryPiecePromotion);
-    parse_attribute("pieceDemotion", v->pieceDemotion);
     parse_attribute("blastImmuneTypes", v->blastImmuneTypes, v->pieceToChar);
     parse_attribute("mutuallyImmuneTypes", v->mutuallyImmuneTypes, v->pieceToChar);
     parse_attribute("petrifyOnCaptureTypes", v->petrifyOnCaptureTypes, v->pieceToChar);
     parse_attribute("petrifyBlastPieces", v->petrifyBlastPieces);
-    parse_attribute("doubleStep", v->doubleStep);
-    parse_attribute("doubleStepRegionWhite", v->doubleStepRegion[WHITE]);
-    parse_attribute("doubleStepRegionBlack", v->doubleStepRegion[BLACK]);
-    parse_attribute("tripleStepRegionWhite", v->tripleStepRegion[WHITE]);
-    parse_attribute("tripleStepRegionBlack", v->tripleStepRegion[BLACK]);
     parse_attribute("enPassantRegion", v->enPassantRegion);
     parse_attribute("enPassantTypes", v->enPassantTypes[WHITE], v->pieceToChar);
     parse_attribute("enPassantTypes", v->enPassantTypes[BLACK], v->pieceToChar);
     parse_attribute("enPassantTypesWhite", v->enPassantTypes[WHITE], v->pieceToChar);
     parse_attribute("enPassantTypesBlack", v->enPassantTypes[BLACK], v->pieceToChar);
-    parse_attribute("castling", v->castling);
-    parse_attribute("castlingDroppedPiece", v->castlingDroppedPiece);
     parse_attribute("castlingKingsideFile", v->castlingKingsideFile);
     parse_attribute("castlingQueensideFile", v->castlingQueensideFile);
     parse_attribute("castlingRank", v->castlingRank);
@@ -444,14 +427,9 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("castlingRookPiecesWhite", v->castlingRookPieces[WHITE], v->pieceToChar);
     parse_attribute("castlingRookPiecesBlack", v->castlingRookPieces[BLACK], v->pieceToChar);
     parse_attribute("oppositeCastling", v->oppositeCastling);
-    parse_attribute("checking", v->checking);
-    parse_attribute("dropChecks", v->dropChecks);
-    parse_attribute("mustCapture", v->mustCapture);
     parse_attribute("mustDrop", v->mustDrop);
     parse_attribute("mustDropType", v->mustDropType, v->pieceToChar);
-    parse_attribute("pieceDrops", v->pieceDrops);
     parse_attribute("dropLoop", v->dropLoop);
-    parse_attribute("capturesToHand", v->capturesToHand);
     parse_attribute("firstRankPawnDrops", v->firstRankPawnDrops);
     parse_attribute("promotionZonePawnDrops", v->promotionZonePawnDrops);
     parse_attribute("enclosingDrop", v->enclosingDrop);
@@ -460,16 +438,13 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("blackDropRegion", v->blackDropRegion);
     parse_attribute("sittuyinRookDrop", v->sittuyinRookDrop);
     parse_attribute("dropOppositeColoredBishop", v->dropOppositeColoredBishop);
-    parse_attribute("dropPromoted", v->dropPromoted);
     parse_attribute("dropNoDoubled", v->dropNoDoubled, v->pieceToChar);
     parse_attribute("dropNoDoubledCount", v->dropNoDoubledCount);
     parse_attribute("immobilityIllegal", v->immobilityIllegal);
-    parse_attribute("gating", v->gating);
     parse_attribute("wallingRegionWhite", v->wallingRegion[WHITE]);
     parse_attribute("wallingRegionBlack", v->wallingRegion[BLACK]);
     parse_attribute("wallingRegion", v->wallingRegion[WHITE]);
     parse_attribute("wallingRegion", v->wallingRegion[BLACK]);
-    parse_attribute("seirawanGating", v->seirawanGating);
     parse_attribute("cambodianMoves", v->cambodianMoves);
     parse_attribute("diagonalLines", v->diagonalLines);
     parse_attribute("pass", v->pass[WHITE]);
@@ -495,7 +470,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("nFoldValueAbsolute", v->nFoldValueAbsolute);
     parse_attribute("perpetualCheckIllegal", v->perpetualCheckIllegal);
     parse_attribute("moveRepetitionIllegal", v->moveRepetitionIllegal);
-    parse_attribute("chasingRule", v->chasingRule);
     parse_attribute("stalemateValue", v->stalemateValue);
     parse_attribute("stalematePieceCount", v->stalematePieceCount);
     parse_attribute("checkmateValue", v->checkmateValue);
@@ -586,14 +560,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
                     std::cerr << "pieceToCharTable - Missing piece type: " << ptu << std::endl;
             }
         }
-
-        // Contradictory options
-        if (!v->checking && v->checkCounting)
-            std::cerr << "checkCounting=true requires checking=true." << std::endl;
-        if (v->castling && v->castlingRank > v->maxRank)
-            std::cerr << "Inconsistent settings: castlingRank > maxRank." << std::endl;
-        if (v->castling && v->castlingQueensideFile > v->castlingKingsideFile)
-            std::cerr << "Inconsistent settings: castlingQueensideFile > castlingKingsideFile." << std::endl;
 
         // Options incompatible with royal kings
         if (v->pieceTypes & KING)

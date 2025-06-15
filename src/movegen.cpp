@@ -32,23 +32,6 @@ namespace {
 template<MoveType T>
 ExtMove* make_move_and_gating(const Position& pos, ExtMove* moveList, Color us, Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
     *moveList++ = make<T>(from, to, pt);
-
-    // Gating moves
-    if (pos.seirawan_gating() && (pos.gates(us) & from))
-        for (PieceSet ps = pos.piece_types(); ps;)
-        {
-            PieceType pt_gating = pop_lsb(ps);
-            if (pos.can_drop(us, pt_gating) && (pos.drop_region(us, pt_gating) & from))
-                *moveList++ = make_gating<T>(from, to, pt_gating, from);
-        }
-    if (pos.seirawan_gating() && T == CASTLING && (pos.gates(us) & to))
-        for (PieceSet ps = pos.piece_types(); ps;)
-        {
-            PieceType pt_gating = pop_lsb(ps);
-            if (pos.can_drop(us, pt_gating) && (pos.drop_region(us, pt_gating) & to))
-                *moveList++ = make_gating<T>(from, to, pt_gating, to);
-        }
-
     return moveList;
 }
 #endif
@@ -83,7 +66,7 @@ ExtMove* make_promotions(const Position& pos, ExtMove* moveList, Square to) {
                 moveList = make_move_and_gating<PROMOTION>(pos, moveList, pos.side_to_move(), to - D, to, pt);
         }
         PieceType pt = pos.promoted_piece_type(PAWN);
-        if (pt && !(pos.piece_promotion_on_capture() && pos.empty(to)))
+        if (pt)
             moveList = make_move_and_gating<PIECE_PROMOTION>(pos, moveList, pos.side_to_move(), to - D, to);
     }
 #endif
@@ -100,15 +83,6 @@ ExtMove* generate_drops(const Position& pos, ExtMove* moveList, PieceType pt, Bi
         // Restrict to valid target
         b &= pos.drop_region(Us, pt);
 
-        // Add to move list
-        if (pos.drop_promoted() && pos.promoted_piece_type(pt))
-        {
-            Bitboard b2 = b;
-            if (Type == QUIET_CHECKS)
-                b2 &= pos.check_squares(pos.promoted_piece_type(pt));
-            while (b2)
-                *moveList++ = make_drop(pop_lsb(b2), pt, pos.promoted_piece_type(pt));
-        }
         if (Type == QUIET_CHECKS || !pos.can_drop(Us, pt))
             b &= pos.check_squares(pt);
         while (b)
@@ -145,8 +119,6 @@ ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard ta
 #else
     const Bitboard promotionZone = pos.promotion_zone(Us);
     const Bitboard standardPromotionZone = pos.sittuyin_promotion() ? Bitboard(0) : promotionZone;
-    const Bitboard doubleStepRegion = pos.double_step_region(Us);
-    const Bitboard tripleStepRegion = pos.triple_step_region(Us);
 
     const Bitboard pawns      = pos.pieces(Us, PAWN);
     const Bitboard movable    = pos.board_bb(Us, PAWN) & ~pos.pieces();
@@ -156,8 +128,8 @@ ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard ta
 
     // Define single and double push, left and right capture, as well as respective promotion moves
     Bitboard b1 = shift<Up>(pawns) & movable & target;
-    Bitboard b2 = shift<Up>(shift<Up>(pawns & doubleStepRegion) & movable) & movable & target;
-    Bitboard b3 = shift<Up>(shift<Up>(shift<Up>(pawns & tripleStepRegion) & movable) & movable) & movable & target;
+    Bitboard b2 = 0;
+    Bitboard b3 = 0;
     Bitboard brc = shift<UpRight>(pawns) & capturable & target;
     Bitboard blc = shift<UpLeft >(pawns) & capturable & target;
 
@@ -409,7 +381,7 @@ ExtMove* generate_moves(const Position& pos, ExtMove* moveList, PieceType Pt, Bi
         Bitboard promotion_zone = pos.promotion_zone(Us);
         PieceType promPt = pos.promoted_piece_type(Pt);
         Bitboard b2 = promPt && (!pos.promotion_limit(promPt) || pos.promotion_limit(promPt) > pos.count(Us, promPt)) ? b1 : Bitboard(0);
-        Bitboard b3 = pos.piece_demotion() && pos.is_promoted(from) ? b1 : Bitboard(0);
+        Bitboard b3 = Bitboard(0);
         Bitboard pawnPromotions = pos.variant()->promotionPawnTypes[Us] & Pt ? b & (Type == EVASIONS ? target : ~pos.pieces(Us)) & promotion_zone : Bitboard(0);
         Bitboard epSquares = pos.variant()->enPassantTypes[Us] & Pt ? attacks & ~quiets & pos.ep_squares() & ~pos.pieces() : Bitboard(0);
 
@@ -420,14 +392,6 @@ ExtMove* generate_moves(const Position& pos, ExtMove* moveList, PieceType Pt, Bi
         // Restrict target squares considering promotion zone
         if (b2 | b3)
         {
-            if (pos.mandatory_piece_promotion())
-                b1 &= (promotion_zone & from ? Bitboard(0) : ~promotion_zone) | (pos.piece_promotion_on_capture() ? ~pos.pieces() : Bitboard(0));
-            // Exclude quiet promotions/demotions
-            if (pos.piece_promotion_on_capture())
-            {
-                b2 &= pos.pieces();
-                b3 &= pos.pieces();
-            }
             // Consider promotions/demotions into promotion zone
             if (!(promotion_zone & from))
             {
