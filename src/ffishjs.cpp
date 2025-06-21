@@ -447,7 +447,7 @@ private:
       Board::sfInitialized = true;
     }
     v = get_variant(uciVariant);
-    UCI::init_variant(v);
+    UCI::init_variant();
     this->resetStates();
     if (fen == "")
       fen = v->startFen;

@@ -113,11 +113,7 @@ struct LimitsType {
 
     bool use_time_management() const { return time[WHITE] || time[BLACK]; }
 
-#ifndef FAIRY_STOCKFISH
     std::vector<Move> searchmoves;
-#else
-  std::vector<Move> searchmoves, banmoves;
-#endif
     TimePoint         time[COLOR_NB], inc[COLOR_NB], npmsec, movetime, startTime;
     int               movestogo, depth, mate, perft, infinite;
     uint64_t          nodes;

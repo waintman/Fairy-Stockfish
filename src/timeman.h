@@ -21,9 +21,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#ifdef FAIRY_STOCKFISH
-#include "position.h"
-#endif
+
 #include "misc.h"
 #include "types.h"
 
@@ -39,7 +37,7 @@ struct LimitsType;
 // the maximum available time, the game move number, and other parameters.
 class TimeManagement {
    public:
-
+    void init(Search::LimitsType& limits, Color us, int ply, const OptionsMap& options);
 
     TimePoint optimum() const;
     TimePoint maximum() const;
@@ -47,11 +45,7 @@ class TimeManagement {
 
     void clear();
     void advance_nodes_time(std::int64_t nodes);
-#ifndef FAIRY_STOCKFISH
-    void init(Search::LimitsType& limits, Color us, int ply, const OptionsMap& options);
-#else
-    void init(const Position& pos, Search::LimitsType& limits, Color us, int ply, const OptionsMap& options);
-#endif
+
    private:
     TimePoint startTime;
     TimePoint optimumTime;

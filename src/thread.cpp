@@ -32,7 +32,6 @@
 #include "syzygy/tbprobe.h"
 #include "timeman.h"
 #include "tt.h"
-
 #include "types.h"
 #include "ucioption.h"
 
@@ -70,6 +69,7 @@ void Thread::start_searching() {
     mutex.unlock();   // Unlock before notifying saves a few CPU-cycles
     cv.notify_one();  // Wake up the thread in idle_loop()
 }
+
 
 // Blocks on the condition variable
 // until the thread has finished searching.
@@ -180,13 +180,8 @@ void ThreadPool::start_thinking(const OptionsMap&  options,
     Search::RootMoves rootMoves;
 
     for (const auto& m : MoveList<LEGAL>(pos))
-#ifndef FAIRY_STOCKFISH
         if (limits.searchmoves.empty()
             || std::count(limits.searchmoves.begin(), limits.searchmoves.end(), m))
-#else
-        if (   (limits.searchmoves.empty() || std::count(limits.searchmoves.begin(), limits.searchmoves.end(), m))
-            && (limits.banmoves.empty() || !std::count(limits.banmoves.begin(), limits.banmoves.end(), m)))
-#endif
             rootMoves.emplace_back(m);
 
     Tablebases::Config tbConfig = Tablebases::rank_root_moves(options, pos, rootMoves);

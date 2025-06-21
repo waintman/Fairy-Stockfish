@@ -24,31 +24,6 @@ JANGGI = "rnba1abnr/4k4/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/4K4/RNBA1ABNR w - - 
 
 
 ini_text = """
-# Hybrid variant of Grand-chess and crazyhouse, using Grand-chess as a template
-[grandhouse:grand]
-startFen = r8r/1nbqkcabn1/pppppppppp/10/10/10/10/PPPPPPPPPP/1NBQKCABN1/R8R[] w - - 0 1
-pieceDrops = true
-capturesToHand = true
-
-# Shogun chess
-[shogun:crazyhouse]
-startFen = rnb+fkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB+FKBNR[] w KQkq - 0 1
-commoner = c
-centaur = g
-archbishop = a
-chancellor = m
-fers = f
-promotionRegionWhite = *6 *7 *8
-promotionRegionBlack = *3 *2 *1
-promotionLimit = g:1 a:1 m:1 q:1
-promotionPieceTypes = -
-promotedPieceType = p:c n:g b:a r:m f:q
-mandatoryPawnPromotion = false
-firstRankPawnDrops = true
-promotionZonePawnDrops = true
-whiteDropRegion = *1 *2 *3 *4 *5
-blackDropRegion = *4 *5 *6 *7 *8
-immobilityIllegal = true
 
 # Asymmetric variant with one army using pieces that move like knights but attack like other pieces (kniroo and knibis)
 [orda:chess]
@@ -62,28 +37,8 @@ flagPiece = k
 flagRegionWhite = *8
 flagRegionBlack = *1
 
-[diana:losalamos]
-pieceToCharTable = PNBRQ................Kpnbrq................k
-bishop = b
-promotionPieceTypes = rbn
-castling = true
-castlingKingsideFile = e
-castlingQueensideFile = b
-startFen = rbnkbr/pppppp/6/6/PPPPPP/RBNKBR w KQkq - 0 1
-
 [passchess:chess]
 pass = true
-
-[royalduck:duck]
-extinctionPseudoRoyal = true
-
-[makhouse:makruk]
-startFen = rnsmksnr/8/pppppppp/8/8/PPPPPPPP/8/RNSKMSNR[] w - - 0 1
-pieceDrops = true
-capturesToHand = true
-firstRankPawnDrops = true
-promotionZonePawnDrops = true
-immobilityIllegal = true
 
 [wazirking:chess]
 fers = q
@@ -114,12 +69,6 @@ customPiece5 = f:mBpBmWpR2
 promotedPieceType = u:w a:w c:f i:f
 startFen = lnsgkgsnl/1rci1uab1/p1p1p1p1p/9/9/9/P1P1P1P1P/1BAU1ICR1/LNSGKGSNL[-] w 0 1
 
-[fogofwar:chess]
-king = -
-commoner = k
-castlingKingPiece = k
-extinctionValue = loss
-extinctionPieceTypes = k
 """
 
 sf.load_variant_config(ini_text)

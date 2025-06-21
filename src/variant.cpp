@@ -165,17 +165,8 @@ Variant* Variant::conclude() {
 
     // Initialize calculated NNUE properties
     nnueKing =  pieceTypes & KING ? KING
-              : extinctionPieceCount == 0 && (extinctionPieceTypes & COMMONER) ? COMMONER
-              : NO_PIECE_TYPE;
+                                  : NO_PIECE_TYPE;
     // The nnueKing has to present exactly once and must not change in count
-    if (nnueKing != NO_PIECE_TYPE)
-    {
-        // If the nnueKing is involved in promotion, count might change
-        if (   ((promotionPawnTypes[WHITE] | promotionPawnTypes[BLACK]) & nnueKing)
-            || ((promotionPieceTypes[WHITE] | promotionPieceTypes[BLACK]) & nnueKing)
-            || std::find(std::begin(promotedPieceType), std::end(promotedPieceType), nnueKing) != std::end(promotedPieceType))
-            nnueKing = NO_PIECE_TYPE;
-    }
     if (nnueKing != NO_PIECE_TYPE)
     {
         std::string fenBoard = startFen.substr(0, startFen.find(' '));
@@ -252,19 +243,12 @@ Variant* Variant::conclude() {
                     && !checkCounting
                     && !makpongRule
                     && !connectN
-                    && !petrifyOnCaptureTypes
                     && !restrictedMobility
                     && kingType == KING
                    )
                  ? endgameEval : NO_EG_EVAL;
 
     shogiStylePromotions = false;
-    for (PieceType current: promotedPieceType)
-        if (current != NO_PIECE_TYPE)
-        {
-            shogiStylePromotions = true;
-            break;
-        }
 
     connect_directions.clear();
     if (connectHorizontal)

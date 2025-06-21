@@ -62,22 +62,20 @@ std::set<std::string> standard_variants = {
     "berolina", "spartan"
 };
 
-void UCI::init_variant(const Variant* v) {
-    pieceMap.init(v);
+void UCI::init_variant() {
+    pieceMap.init();
     Bitboards::init_pieces();
 }
-void on_variant_set(const Option &o) {
+void on_variant_set() {
     // Re-initialize NNUE
     // Eval::NNUE::init();
-
-    const Variant* v = variants.find(o)->second;
-    UCI::init_variant(v);
+    UCI::init_variant();
     // PSQT::init(v);
 }
 
 void on_variant_change(const Option &o) {
     // Variant initialization
-    on_variant_set(o);
+    on_variant_set();
 
     const Variant* v = variants.find(o)->second;
     // Do not send setup command for known variants
@@ -233,8 +231,6 @@ void UCI::loop() {
     for (int i = 1; i < cli.argc; ++i)
         cmd += std::string(cli.argv[i]) + " ";
 #ifdef FAIRY_STOCKFISH
-  // UCCI banmoves state
-    std::vector<Move> banmoves = {};
 
     if (cli.argc > 1 && (std::strcmp(cli.argv[1], "noautoload") == 0))
     {
@@ -289,27 +285,12 @@ void UCI::loop() {
 
         else if (token == "setoption")
             setoption(is);
-#ifdef FAIRY_STOCKFISH
-        // UCCI-specific banmoves command
-        else if (token == "banmoves")
-            while (is >> token)
-                banmoves.push_back(UCI::to_move(pos, token));
-#endif
-#ifndef FAIRY_STOCKFISH
         else if (token == "go")
             go(pos, is, states);
         else if (token == "position")
             position(pos, is, states);
         else if (token == "ucinewgame")
             search_clear();
-#else
-        else if (token == "go")
-            go(pos, is, states, banmoves);
-        else if (token == "position")
-            position(pos, is, states), banmoves.clear();
-        else if (token == "ucinewgame" || token == "usinewgame" || token == "uccinewgame")
-            search_clear();
-#endif
         else if (token == "isready")
             sync_cout << "readyok" << sync_endl;
 
@@ -359,11 +340,7 @@ void UCI::loop() {
     } while (token != "quit" && cli.argc == 1);  // The command-line arguments are one-shot
 }
 
-#ifndef FAIRY_STOCKFISH
 void UCI::go(Position& pos, std::istringstream& is, StateListPtr& states) {
-#else
-void UCI::go(Position& pos, std::istringstream& is, StateListPtr& states, const std::vector<Move>& banmoves) {
-#endif
 
     Search::LimitsType limits;
     std::string        token;
@@ -372,7 +349,6 @@ void UCI::go(Position& pos, std::istringstream& is, StateListPtr& states, const 
     limits.startTime = now();  // The search starts as early as possible
 
 #ifdef FAIRY_STOCKFISH
-    limits.banmoves = banmoves;
     bool isUsi = false;
     int secResolution = options["usemillisec"] ? 1 : 1000;
 #endif
@@ -535,11 +511,6 @@ void UCI::position(Position& pos, std::istringstream& is, StateListPtr& states) 
     std::string token, fen;
 
     is >> token;
-#ifdef FAIRY_STOCKFISH
-    // Parse as SFEN if specified
-    bool sfen = token == "sfen";
-
-#endif
     if (token == "startpos")
     {
 #ifndef FAIRY_STOCKFISH
@@ -549,11 +520,7 @@ void UCI::position(Position& pos, std::istringstream& is, StateListPtr& states) 
 #endif
         is >> token;  // Consume the "moves" token, if any
     }
-#ifndef FAIRY_STOCKFISH
     else if (token == "fen")
-#else
-    else if (token == "fen" || token == "sfen")
-#endif
         while (is >> token && token != "moves")
             fen += token + " ";
     else
@@ -563,7 +530,7 @@ void UCI::position(Position& pos, std::istringstream& is, StateListPtr& states) 
 #ifndef FAIRY_STOCKFISH
     pos.set(fen, options["UCI_Chess960"], &states->back());
 #else
-    pos.set(variants.find(options["UCI_Variant"])->second, fen, options["UCI_Chess960"], &states->back(), sfen);
+    pos.set(variants.find(options["UCI_Variant"])->second, fen, options["UCI_Chess960"], &states->back());
 #endif
 
     // Parse the move list, if any
@@ -598,31 +565,15 @@ std::string UCI::value(Value v) {
     return ss.str();
 }
 
-#ifdef FAIRY_STOCKFISH
-/// UCI::dropped_piece() generates a piece label string from a Move.
-
-std::string UCI::dropped_piece(const Position& pos, Move m) {
-  assert(m.type_of() == DROP);
-  if (dropped_piece_type(m) == pos.promoted_piece_type(in_hand_piece_type(m)))
-      // Dropping as promoted piece
-      return std::string{'+', pos.piece_to_char()[in_hand_piece_type(m)]};
-  else
-      return std::string{pos.piece_to_char()[dropped_piece_type(m)]};
-}
-#endif
-
-#ifndef FAIRY_STOCKFISH
 std::string UCI::square(Square s) {
+#ifndef FAIRY_STOCKFISH
     return std::string{char('a' + file_of(s)), char('1' + rank_of(s))};
-}
-
 #else
-std::string UCI::square(const Position& pos, Square s) {
-        return rank_of(s) < RANK_10 ? std::string{ char('a' + file_of(s)), char('1' + (rank_of(s) % 10)) }
-                                    : std::string{ char('a' + file_of(s)), char('0' + ((rank_of(s) + 1) / 10)),
-                                                   char('0' + ((rank_of(s) + 1) % 10)) };
-}
+    return rank_of(s) < RANK_10 ? std::string{ char('a' + file_of(s)), char('1' + (rank_of(s) % 10)) }
+                                : std::string{ char('a' + file_of(s)), char('0' + ((rank_of(s) + 1) / 10)),
+                                               char('0' + ((rank_of(s) + 1) % 10)) };
 #endif
+}
 
 #ifndef FAIRY_STOCKFISH
 std::string UCI::move(Move m, bool chess960) {
@@ -646,20 +597,14 @@ std::string UCI::move(const Position& pos, Move m) {
         from = m.to_sq(), to = m.from_sq();
     else if (m.type_of() == CASTLING && !pos.is_chess960())
     {
-        to = make_square(to > from ? pos.castling_kingside_file() : pos.castling_queenside_file(), rank_of(from));
+        to = make_square(to > from ? FILE_G : FILE_C, rank_of(from));
         // If the castling move is ambiguous with a normal king move, switch to 960 notation
         if (pos.pseudo_legal(make_move(from, to)))
             to = m.to_sq();
     }
 #endif
 
-#ifndef FAIRY_STOCKFISH
     std::string move = square(from) + square(to);
-#else
-    std::string move = (m.type_of() == DROP ? UCI::dropped_piece(pos, m) + '@'
-                                    : UCI::square(pos, from)) + UCI::square(pos, to);
-
-#endif
 
     if (m.type_of() == PROMOTION)
 #ifndef FAIRY_STOCKFISH
@@ -668,13 +613,11 @@ std::string UCI::move(const Position& pos, Move m) {
         move += pos.piece_to_char()[make_piece(BLACK, m.promotion_type( ))];
         else if (m.type_of() == PIECE_PROMOTION)
             move += '+';
-        else if (m.type_of() == PIECE_DEMOTION)
-            move += '-';
         else if (is_gating(m))
         {
             move += pos.piece_to_char()[make_piece(BLACK, gating_type(m))];
             if (gating_square(m) != from)
-                move += UCI::square(pos, gating_square(m));
+                move += square(gating_square(m));
         }
 
 #endif
@@ -734,7 +677,7 @@ Move UCI::to_move(const Position& pos, std::string& str) {
 #ifndef FAIRY_STOCKFISH
         if (str == move(m, pos.is_chess960()))
 #else
-        if (str == UCI::move(pos, m) || (is_pass(m) && str == UCI::square(pos, m.from_sq()) + UCI::square(pos, m.to_sq())))
+        if (str == UCI::move(pos, m) || (is_pass(m) && str == square(m.from_sq()) + square(m.to_sq())))
 #endif
             return m;
 

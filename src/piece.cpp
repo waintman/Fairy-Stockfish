@@ -186,7 +186,7 @@ namespace {
   }
 }
 
-void PieceMap::init(const Variant* v) {
+void PieceMap::init() {
   clear_all();
   add(PAWN, from_betza("fmWfceF", "pawn"));
   add(KNIGHT, from_betza("N", "knight"));
@@ -227,7 +227,7 @@ void PieceMap::init(const Variant* v) {
   add(KING, from_betza("K", "king"));
   // Add custom pieces
   for (PieceType pt = CUSTOM_PIECES; pt <= CUSTOM_PIECES_END; ++pt)
-      add(pt, from_betza(v != nullptr ? v->customPiece[pt - CUSTOM_PIECES] : "", ""));
+    add(pt, from_betza("", ""));
 }
 
 void PieceMap::add(PieceType pt, const PieceInfo* p) {

@@ -41,33 +41,21 @@ struct Variant {
   int pocketSize = 0;
   Rank maxRank = RANK_8;
   File maxFile = FILE_H;
-  bool chess960 = false;
   int pieceValue[PHASE_NB][PIECE_TYPE_NB] = {};
-  std::string customPiece[CUSTOM_PIECES_NB] = {};
   PieceSet pieceTypes = CHESS_PIECES;
   std::string pieceToChar =  " PNBRQ" + std::string(KING - QUEEN - 1, ' ') + "K" + std::string(PIECE_TYPE_NB - KING - 1, ' ')
                            + " pnbrq" + std::string(KING - QUEEN - 1, ' ') + "k" + std::string(PIECE_TYPE_NB - KING - 1, ' ');
   std::string pieceToCharSynonyms = std::string(PIECE_NB, ' ');
   std::string startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
   Bitboard mobilityRegion[COLOR_NB][PIECE_TYPE_NB] = {};
-  Bitboard promotionRegion[COLOR_NB] = {Rank8BB, Rank1BB};
-  PieceType promotionPawnType[COLOR_NB] = {PAWN, PAWN};
-  PieceSet promotionPawnTypes[COLOR_NB] = {piece_set(PAWN), piece_set(PAWN)};
-  PieceSet promotionPieceTypes[COLOR_NB] = {piece_set(QUEEN) | ROOK | BISHOP | KNIGHT,
-                                            piece_set(QUEEN) | ROOK | BISHOP | KNIGHT};
-  bool sittuyinPromotion = false;
-  int promotionLimit[PIECE_TYPE_NB] = {}; // 0 means unlimited
-  PieceType promotedPieceType[PIECE_TYPE_NB] = {};
+  
   bool mandatoryPawnPromotion = true;
   PieceSet mutuallyImmuneTypes = NO_PIECE_SET;
-  PieceSet petrifyOnCaptureTypes = NO_PIECE_SET;
   bool petrifyBlastPieces = false;
   Bitboard enPassantRegion = AllSquares;
   PieceSet enPassantTypes[COLOR_NB] = {piece_set(PAWN), piece_set(PAWN)};
-  File castlingKingsideFile = FILE_G;
   File castlingQueensideFile = FILE_C;
   Rank castlingRank = RANK_1;
-  File castlingKingFile = FILE_E;
   PieceType castlingKingPiece[COLOR_NB] = {KING, KING};
   File castlingRookKingsideFile = FILE_MAX; // only has to match if rook is not in corner in non-960 variants
   File castlingRookQueensideFile = FILE_A; // only has to match if rook is not in corner in non-960 variants
@@ -76,7 +64,6 @@ struct Variant {
   PieceType kingType = KING;
   bool mustDrop = false;
   PieceType mustDropType = ALL_PIECES;
-  bool pieceDrops = false;
   bool dropLoop = false;
   bool firstRankPawnDrops = false;
   bool promotionZonePawnDrops = false;
@@ -98,7 +85,6 @@ struct Variant {
   bool flyingGeneral = false;
   Rank soldierPromotionRank = RANK_1;
   EnclosingRule flipEnclosedPieces = NO_ENCLOSING;
-  bool freeDrops = false;
 
   // game end
   PieceSet nMoveRuleTypes[COLOR_NB] = {piece_set(PAWN), piece_set(PAWN)};
@@ -117,10 +103,7 @@ struct Variant {
   bool bikjangRule = false;
   Value extinctionValue = VALUE_NONE;
   bool extinctionClaim = false;
-  bool extinctionPseudoRoyal = false;
   bool dupleCheck = false;
-  PieceSet extinctionPieceTypes = NO_PIECE_SET;
-  int extinctionPieceCount = 0;
   int extinctionOpponentPieceCount = 0;
   PieceType flagPiece[COLOR_NB] = {ALL_PIECES, ALL_PIECES};
   Bitboard flagRegion[COLOR_NB] = {};
@@ -141,7 +124,6 @@ struct Variant {
   Value connectValue = VALUE_MATE;
   MaterialCounting materialCounting = NO_MATERIAL_COUNTING;
   bool adjudicateFullBoard = false;
-  CountingRule countingRule = NO_COUNTING;
   CastlingRights castlingWins = NO_CASTLING;
 
   // Derived properties
@@ -170,9 +152,6 @@ struct Variant {
       pieceToCharSynonyms[make_piece(WHITE, pt)] = toupper(c2);
       pieceToCharSynonyms[make_piece(BLACK, pt)] = tolower(c2);
       pieceTypes |= pt;
-      // Add betza notation for custom piece
-      if (is_custom(pt))
-          customPiece[pt - CUSTOM_PIECES] = betza;
   }
 
   void add_piece(PieceType pt, char c, char c2) {
@@ -185,18 +164,12 @@ struct Variant {
       pieceToCharSynonyms[make_piece(WHITE, pt)] = ' ';
       pieceToCharSynonyms[make_piece(BLACK, pt)] = ' ';
       pieceTypes &= ~piece_set(pt);
-      // erase from promotion types to ensure consistency
-      promotionPieceTypes[WHITE] &= ~piece_set(pt);
-      promotionPieceTypes[BLACK] &= ~piece_set(pt);
   }
 
   void reset_pieces() {
       pieceToChar = std::string(PIECE_NB, ' ');
       pieceToCharSynonyms = std::string(PIECE_NB, ' ');
       pieceTypes = NO_PIECE_SET;
-      // clear promotion types to ensure consistency
-      promotionPieceTypes[WHITE] = NO_PIECE_SET;
-      promotionPieceTypes[BLACK] = NO_PIECE_SET;
   }
 
   // Reset values that always need to be redefined

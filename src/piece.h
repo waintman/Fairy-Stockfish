@@ -40,7 +40,7 @@ struct PieceInfo {
 };
 
 struct PieceMap : public std::map<PieceType, const PieceInfo*> {
-  void init(const Variant* v = nullptr);
+  void init();
   void add(PieceType pt, const PieceInfo* v);
   void clear_all();
 };
@@ -48,8 +48,7 @@ struct PieceMap : public std::map<PieceType, const PieceInfo*> {
 extern PieceMap pieceMap;
 
 inline std::string piece_name(PieceType pt) {
-  return is_custom(pt) ? "customPiece" + std::to_string(pt - CUSTOM_PIECES + 1)
-                       : pieceMap.find(pt)->second->name;
+  return pieceMap.find(pt)->second->name;
 }
 
 } // namespace Stockfish

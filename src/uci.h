@@ -58,19 +58,17 @@ class UCI {
     static constexpr char SepChar = ';';
 #endif
     static const int NormalizeToPawnValue = 328;
-    static void init_variant(const Variant* v);
+    static void init_variant();
 #endif
     void loop();
 
     static int         to_cp(Value v);
     static std::string value(Value v);
-#ifndef FAIRY_STOCKFISH
     static std::string square(Square s);
+#ifndef FAIRY_STOCKFISH
     static std::string move(Move m, bool chess960);
 #else
-    static std::string square(const Position& pos, Square s);
     static std::string move(const Position& pos, Move m);
-    static std::string dropped_piece(const Position& pos, Move m);
     void load(std::istringstream& is, bool check = false);
 #endif
     static std::string wdl(Value v, int ply);
@@ -87,28 +85,13 @@ class UCI {
     ThreadPool         threads;
     CommandLine        cli;
 
-#ifndef FAIRY_STOCKFISH
     void go(Position& pos, std::istringstream& is, StateListPtr& states);
-#else
-    void go(Position& pos, std::istringstream& is, StateListPtr& states, const std::vector<Move>& banmoves = {});
-#endif
     void bench(Position& pos, std::istream& args, StateListPtr& states);
     void position(Position& pos, std::istringstream& is, StateListPtr& states);
     void trace_eval(Position& pos);
     void search_clear();
     void setoption(std::istringstream& is);
 };
-
-std::string value(Value v);
-#ifndef FAIRY_STOCKFISH
-std::string square(Square s);
-std::string move(Move m, bool chess960);
-#else
-std::string move(const Position& pos, Move m);
-#endif
-std::string pv(const Position& pos, Depth depth);
-std::string wdl(Value v, int ply);
-Move to_move(const Position& pos, std::string& str);
 
 }  // namespace Stockfish
 

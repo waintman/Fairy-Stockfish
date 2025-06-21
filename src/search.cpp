@@ -160,11 +160,7 @@ void Search::Worker::start_searching() {
         return;
     }
 
-#ifndef FAIRY_STOCKFISH
     main_manager()->tm.init(limits, rootPos.side_to_move(), rootPos.game_ply(), options);
-#else
-    main_manager()->tm.init(rootPos, limits, rootPos.side_to_move(), rootPos.game_ply(), options);
-#endif
     tt.new_search();
 
     if (rootMoves.empty())
@@ -897,7 +893,7 @@ Value Search::Worker::search(
 #ifndef FAIRY_STOCKFISH
     probCutBeta = beta + 181 - 68 * improving;
 #else
-    probCutBeta = beta + (181 + 20 * !!pos.flag_region(~pos.side_to_move())) * (1 + pos.check_counting() + pos.extinction_single_piece()) - 68 * improving;
+    probCutBeta = beta + (181 + 20 * !!pos.flag_region(~pos.side_to_move())) * (1 + pos.check_counting()) - 68 * improving;
 #endif
     if (
       !PvNode && depth > 3
@@ -1107,7 +1103,6 @@ moves_loop:  // When in check, search starts here
                            + 121 * lmrDepth
                          <= alpha)
 #else
-                    && !pos.extinction_single_piece()
                     && ss->staticEval + ((bestValue < ss->staticEval - 57 ? 144 : 57) + 121 * lmrDepth) * (1 + pos.check_counting()) <= alpha)
 #endif
                     continue;

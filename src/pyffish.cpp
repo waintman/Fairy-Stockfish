@@ -28,7 +28,7 @@ void buildPosition(Position& pos, StateListPtr& states, const char *variant, con
     states = StateListPtr(new std::deque<StateInfo>(1)); // Drop old and create a new one
 
     const Variant* v = variants.find(std::string(variant))->second;
-    UCI::init_variant(v);
+    UCI::init_variant();
     if (strcmp(fen, "startpos") == 0)
         fen = v->startFen.c_str();
     pos.set(v, std::string(fen), chess960, &states->back(), Threads.main());

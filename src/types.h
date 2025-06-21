@@ -408,10 +408,9 @@ enum PieceType {
     // Aliases
     CUSTOM_PIECES = CUSTOM_PIECE_1,
     CUSTOM_PIECES_END = KING - 1,
-    CUSTOM_PIECES_ROYAL = CUSTOM_PIECES_END,
-    CUSTOM_PIECES_NB = CUSTOM_PIECES_END - CUSTOM_PIECES + 1,
+
     FAIRY_PIECES = QUEEN + 1,
-    FAIRY_PIECES_END = CUSTOM_PIECES - 1,
+    FAIRY_PIECES_END = CENTAUR,
 #endif
     ALL_PIECES = 0,
 #ifndef FAIRY_STOCKFISH
@@ -899,7 +898,7 @@ class Move {
 #ifndef FAIRY_STOCKFISH
         return Square((data >> 6) & 0x3F);
 #else
-        return type_of() == DROP ? SQ_NONE : Square((data >> SQUARE_BITS) & SQUARE_BIT_MASK);
+        return Square((data >> SQUARE_BITS) & SQUARE_BIT_MASK);
 #endif
     }
 
@@ -1006,25 +1005,8 @@ constexpr Move reverse_move(Move m) {
   return make_move(m.to_sq(), m.from_sq());
 }
 
-constexpr Move make_drop(Square to, PieceType pt_in_hand, PieceType pt_dropped) {
-  return Move((pt_in_hand << (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) + (pt_dropped << (2 * SQUARE_BITS + MOVE_TYPE_BITS)) + DROP + to);
-}
-
-template<MoveType T>
-constexpr Move make_gating(Square from, Square to, PieceType pt, Square gate) {
-  return Move((gate << (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) + (pt << (2 * SQUARE_BITS + MOVE_TYPE_BITS)) + T + (from << SQUARE_BITS) + to);
-}
-
-constexpr PieceType dropped_piece_type(Move m) {
-  return PieceType((m.raw() >> (2 * SQUARE_BITS + MOVE_TYPE_BITS)) & (PIECE_TYPE_NB - 1));
-}
-
 constexpr PieceType in_hand_piece_type(Move m) {
   return PieceType((m.raw() >> (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) & (PIECE_TYPE_NB - 1));
-}
-
-inline bool is_custom(PieceType pt) {
-  return pt >= CUSTOM_PIECES && pt <= CUSTOM_PIECES_END;
 }
 
 inline int dist(Direction d) {

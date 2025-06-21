@@ -96,12 +96,6 @@ namespace {
         return value == "makruk" || value == "asean" || value == "none";
     }
 
-    template <> bool set(const std::string& value, ChasingRule& target) {
-        target =  value == "axf"  ? AXF_CHASING
-                : NO_CHASING;
-        return value == "axf" || value == "none";
-    }
-
     template <> bool set(const std::string& value, EnclosingRule& target) {
         target =  value == "reversi"  ? REVERSI
                 : value == "ataxx" ? ATAXX
@@ -111,16 +105,6 @@ namespace {
                 : value == "top" ? TOP
                 : NO_ENCLOSING;
         return value == "reversi" || value == "ataxx" || value == "quadwrangle" || value =="snort" || value =="anyside" || value =="top" || value == "none";
-    }
-
-    template <> bool set(const std::string& value, WallingRule& target) {
-        target =  value == "arrow"  ? ARROW
-                : value == "duck" ? DUCK
-                : value == "edge" ? EDGE
-                : value == "past" ? PAST
-                : value == "static" ? STATIC
-                : NO_WALLING;
-        return value == "arrow" || value == "duck" || value == "edge" || value =="past" || value == "static" || value == "none";
     }
 
     template <> bool set(const std::string& value, Bitboard& target) {
@@ -251,10 +235,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     // piece types
     for (PieceType pt = PAWN; pt <= KING; ++pt)
     {
-        if (pt == CUSTOM_PIECES_ROYAL)
-            // reserved custom royal/king slot
-            continue;
-
         // piece char
         std::string name = piece_name(pt);
 
@@ -270,31 +250,9 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
                 v->remove_piece(pt);
             }
             // betza
-            if (is_custom(pt))
+            if (pt == KING)
             {
-                if (keyValue->second.size() > 1)
-                {
-                    v->customPiece[pt - CUSTOM_PIECES] = keyValue->second.substr(2);
-                    // Is there an en passant flag in the Betza notation?
-                    if (v->customPiece[pt - CUSTOM_PIECES].find('e') != std::string::npos)
-                    {
-                        v->enPassantTypes[WHITE] |= piece_set(pt);
-                        v->enPassantTypes[BLACK] |= piece_set(pt);
-                    }
-                }
-                else if (DoCheck)
-                    std::cerr << name << " - Missing Betza move notation" << std::endl;
-            }
-            else if (pt == KING)
-            {
-                if (keyValue->second.size() > 1)
-                {
-                    // custom royal piece
-                    v->customPiece[CUSTOM_PIECES_ROYAL - CUSTOM_PIECES] = keyValue->second.substr(2);
-                    v->kingType = CUSTOM_PIECES_ROYAL;
-                }
-                else
-                    v->kingType = KING;
+                v->kingType = KING;
             }
         }
         // mobility region
@@ -325,13 +283,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         }
     }
 
-    // Parse deprecate values for backwards compatibility
-    Rank promotionRank = RANK_8;
-    if (parse_attribute<false>("promotionRank", promotionRank))
-    {
-        for (Color c : {WHITE, BLACK})
-            v->promotionRegion[c] = zone_bb(c, promotionRank, v->maxRank);
-    }
     parse_attribute<false>("whiteFlag", v->flagRegion[WHITE]);
     parse_attribute<false>("blackFlag", v->flagRegion[BLACK]);
     parse_attribute<false>("castlingRookPiece", v->castlingRookPieces[WHITE], v->pieceToChar);
@@ -342,10 +293,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     if (dropOnTop) v->enclosingDrop=TOP;
 
     // Parse aliases
-    parse_attribute("pawnTypes", v->promotionPawnType[WHITE], v->pieceToChar);
-    parse_attribute("pawnTypes", v->promotionPawnType[BLACK], v->pieceToChar);
-    parse_attribute("pawnTypes", v->promotionPawnTypes[WHITE], v->pieceToChar);
-    parse_attribute("pawnTypes", v->promotionPawnTypes[BLACK], v->pieceToChar);
     parse_attribute("pawnTypes", v->enPassantTypes[WHITE], v->pieceToChar);
     parse_attribute("pawnTypes", v->enPassantTypes[BLACK], v->pieceToChar);
     parse_attribute("pawnTypes", v->nMoveRuleTypes[WHITE], v->pieceToChar);
@@ -355,24 +302,8 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("variantTemplate", v->variantTemplate);
     parse_attribute("pieceToCharTable", v->pieceToCharTable);
     parse_attribute("pocketSize", v->pocketSize);
-    parse_attribute("chess960", v->chess960);
     parse_attribute("startFen", v->startFen);
-    parse_attribute("promotionRegionWhite", v->promotionRegion[WHITE]);
-    parse_attribute("promotionRegionBlack", v->promotionRegion[BLACK]);
-    // Take the first promotionPawnTypes as the main promotionPawnType
-    parse_attribute("promotionPawnTypes", v->promotionPawnType[WHITE], v->pieceToChar);
-    parse_attribute("promotionPawnTypes", v->promotionPawnType[BLACK], v->pieceToChar);
-    parse_attribute("promotionPawnTypes", v->promotionPawnTypes[WHITE], v->pieceToChar);
-    parse_attribute("promotionPawnTypes", v->promotionPawnTypes[BLACK], v->pieceToChar);
-    parse_attribute("promotionPawnTypesWhite", v->promotionPawnType[WHITE], v->pieceToChar);
-    parse_attribute("promotionPawnTypesBlack", v->promotionPawnType[BLACK], v->pieceToChar);
-    parse_attribute("promotionPawnTypesWhite", v->promotionPawnTypes[WHITE], v->pieceToChar);
-    parse_attribute("promotionPawnTypesBlack", v->promotionPawnTypes[BLACK], v->pieceToChar);
-    parse_attribute("promotionPieceTypes", v->promotionPieceTypes[WHITE], v->pieceToChar);
-    parse_attribute("promotionPieceTypes", v->promotionPieceTypes[BLACK], v->pieceToChar);
-    parse_attribute("promotionPieceTypesWhite", v->promotionPieceTypes[WHITE], v->pieceToChar);
-    parse_attribute("promotionPieceTypesBlack", v->promotionPieceTypes[BLACK], v->pieceToChar);
-    parse_attribute("sittuyinPromotion", v->sittuyinPromotion);
+
     // promotion limit
     const auto& it_prom_limit = config.find("promotionLimit");
     if (it_prom_limit != config.end())
@@ -380,8 +311,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         char token;
         size_t idx = 0;
         std::stringstream ss(it_prom_limit->second);
-        while (!ss.eof() && ss >> token && (idx = v->pieceToChar.find(toupper(token))) != std::string::npos
-                         && ss >> token && ss >> v->promotionLimit[idx]) {}
         if (DoCheck && idx == std::string::npos)
             std::cerr << "promotionLimit - Invalid piece type: " << token << std::endl;
         else if (DoCheck && !ss.eof())
@@ -394,25 +323,18 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         char token;
         size_t idx = 0, idx2 = 0;
         std::stringstream ss(it_prom_pt->second);
-        while (   ss >> token && (idx = v->pieceToChar.find(toupper(token))) != std::string::npos && ss >> token
-               && ss >> token && (idx2 = (token == '-' ? 0 : v->pieceToChar.find(toupper(token)))) != std::string::npos)
-            v->promotedPieceType[idx] = PieceType(idx2);
         if (DoCheck && (idx == std::string::npos || idx2 == std::string::npos))
             std::cerr << "promotedPieceType - Invalid piece type: " << token << std::endl;
     }
     parse_attribute("mandatoryPawnPromotion", v->mandatoryPawnPromotion);
     parse_attribute("mutuallyImmuneTypes", v->mutuallyImmuneTypes, v->pieceToChar);
-    parse_attribute("petrifyOnCaptureTypes", v->petrifyOnCaptureTypes, v->pieceToChar);
     parse_attribute("petrifyBlastPieces", v->petrifyBlastPieces);
     parse_attribute("enPassantRegion", v->enPassantRegion);
     parse_attribute("enPassantTypes", v->enPassantTypes[WHITE], v->pieceToChar);
     parse_attribute("enPassantTypes", v->enPassantTypes[BLACK], v->pieceToChar);
     parse_attribute("enPassantTypesWhite", v->enPassantTypes[WHITE], v->pieceToChar);
     parse_attribute("enPassantTypesBlack", v->enPassantTypes[BLACK], v->pieceToChar);
-    parse_attribute("castlingKingsideFile", v->castlingKingsideFile);
-    parse_attribute("castlingQueensideFile", v->castlingQueensideFile);
     parse_attribute("castlingRank", v->castlingRank);
-    parse_attribute("castlingKingFile", v->castlingKingFile);
     parse_attribute("castlingKingPiece", v->castlingKingPiece[WHITE], v->pieceToChar);
     parse_attribute("castlingKingPiece", v->castlingKingPiece[BLACK], v->pieceToChar);
     parse_attribute("castlingKingPieceWhite", v->castlingKingPiece[WHITE], v->pieceToChar);
@@ -475,11 +397,8 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("bikjangRule", v->bikjangRule);
     parse_attribute("extinctionValue", v->extinctionValue);
     parse_attribute("extinctionClaim", v->extinctionClaim);
-    parse_attribute("extinctionPseudoRoyal", v->extinctionPseudoRoyal);
     parse_attribute("dupleCheck", v->dupleCheck);
     // extinction piece types
-    parse_attribute("extinctionPieceTypes", v->extinctionPieceTypes, v->pieceToChar);
-    parse_attribute("extinctionPieceCount", v->extinctionPieceCount);
     parse_attribute("extinctionOpponentPieceCount", v->extinctionOpponentPieceCount);
     parse_attribute("flagPiece", v->flagPiece[WHITE], v->pieceToChar);
     parse_attribute("flagPiece", v->flagPiece[BLACK], v->pieceToChar);
@@ -508,7 +427,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("connectValue", v->connectValue);
     parse_attribute("materialCounting", v->materialCounting);
     parse_attribute("adjudicateFullBoard", v->adjudicateFullBoard);
-    parse_attribute("countingRule", v->countingRule);
     parse_attribute("castlingWins", v->castlingWins);
     
     // Report invalid options
@@ -534,7 +452,7 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         v->conclude(); // In preparation for the consistency checks below
 
         // startFen
-        if (FEN::validate_fen(v->startFen, v, v->chess960) != FEN::FEN_OK)
+        if (FEN::validate_fen(v->startFen, v, false) != FEN::FEN_OK)
             std::cerr << "startFen - Invalid starting position: " << v->startFen << std::endl;
 
         // pieceToCharTable
@@ -563,25 +481,12 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         {
             if (v->flipEnclosedPieces)
                 std::cerr << "Can not use kings with flipEnclosedPieces." << std::endl;
-            // We can not fully check support for custom king movements at this point,
-            // since custom pieces are only initialized on loading of the variant.
-            // We will assume this is valid, but it might cause problems later if it's not.
-            if (!is_custom(v->kingType))
-            {
-                const PieceInfo* pi = pieceMap.find(v->kingType)->second;
-                if (   pi->hopper[0][MODALITY_QUIET].size()
-                    || pi->hopper[0][MODALITY_CAPTURE].size()
-                    || std::any_of(pi->steps[0][MODALITY_CAPTURE].begin(),
-                                   pi->steps[0][MODALITY_CAPTURE].end(),
-                                   [](const std::pair<const Direction, int>& d) { return d.second; }))
-                    std::cerr << piece_name(v->kingType) << " is not supported as kingType." << std::endl;
-            }
         }
         // Options incompatible with royal kings OR pseudo-royal kings. Possible in theory though:
         // 1. In blast variants, moving a (pseudo-)royal blastImmuneType into another piece is legal.
         // 2. In blast variants, capturing a piece next to a (pseudo-)royal blastImmuneType is legal.
         // 3. Moving a (pseudo-)royal mutuallyImmuneType into a square threatened by the same type is legal.
-        if ((v->extinctionPseudoRoyal) || (v->pieceTypes & KING))
+        if (v->pieceTypes & KING)
         {
             if (v->mutuallyImmuneTypes)
                 std::cerr << "Can not use kings or pseudo-royal with mutuallyImmuneTypes." << std::endl;

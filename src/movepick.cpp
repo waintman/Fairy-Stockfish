@@ -306,7 +306,7 @@ top:
     case PROBCUT_TT :
         ++stage;
 #ifdef FAIRY_STOCKFISH
-      assert(pos.legal(ttMove) == MoveList<LEGAL>(pos).contains(ttMove) || pos.virtual_drop(ttMove));
+      assert(pos.legal(ttMove) == MoveList<LEGAL>(pos).contains(ttMove));
 #endif
         return ttMove;
 

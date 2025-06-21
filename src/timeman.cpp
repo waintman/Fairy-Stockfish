@@ -34,7 +34,6 @@ TimePoint TimeManagement::elapsed(size_t nodes) const {
     return useNodesTime ? TimePoint(nodes) : now() - startTime;
 }
 
-
 void TimeManagement::clear() {
     availableNodes = 0;  // When in 'nodes as time' mode
 }
@@ -48,11 +47,7 @@ void TimeManagement::advance_nodes_time(std::int64_t nodes) {
 // the bounds of time allowed for the current game ply. We currently support:
 //      1) x basetime (+ z increment)
 //      2) x moves in y seconds (+ z increment)
-#ifndef FAIRY_STOCKFISH
 void TimeManagement::init(Search::LimitsType& limits,
-#else
-void TimeManagement::init(const Position &pos, Search::LimitsType& limits,
-#endif
                           Color               us,
                           int                 ply,
                           const OptionsMap&   options) {
