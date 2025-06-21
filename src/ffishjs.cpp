@@ -500,7 +500,7 @@ namespace ffish {
   }
 
   int validate_fen(std::string fen, std::string uciVariant) {
-    return validate_fen(fen, uciVariant, false);
+    return validate_fen(fen, uciVariant);
   }
 
   int validate_fen(std::string fen) {
@@ -734,13 +734,8 @@ EMSCRIPTEN_BINDINGS(ffish_js) {
     .value("DEFAULT", NOTATION_DEFAULT)
     .value("SAN", NOTATION_SAN)
     .value("LAN", NOTATION_LAN)
-    .value("SHOGI_HOSKING", NOTATION_SHOGI_HOSKING)
-    .value("SHOGI_HODGES", NOTATION_SHOGI_HODGES)
-    .value("SHOGI_HODGES_NUMBER", NOTATION_SHOGI_HODGES_NUMBER)
     .value("JANGGI", NOTATION_JANGGI)
     .value("XIANGQI_WXF", NOTATION_XIANGQI_WXF)
-    .value("THAI_SAN", NOTATION_THAI_SAN)
-    .value("THAI_LAN", NOTATION_THAI_LAN);
   // usage: e.g. ffish.Termination.CHECKMATE
   enum_<Termination>("Termination")
     .value("ONGOING", ONGOING)

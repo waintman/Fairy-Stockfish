@@ -593,9 +593,7 @@ std::string UCI::move(const Position& pos, Move m) {
     if (m.type_of() == CASTLING && !chess960)
         to = make_square(to > from ? FILE_G : FILE_C, rank_of(from));
 #else
-    if (is_gating(m) && gating_square(m) == to)
-        from = m.to_sq(), to = m.from_sq();
-    else if (m.type_of() == CASTLING && !pos.is_chess960())
+    if (m.type_of() == CASTLING && !pos.is_chess960())
     {
         to = make_square(to > from ? FILE_G : FILE_C, rank_of(from));
         // If the castling move is ambiguous with a normal king move, switch to 960 notation
@@ -613,12 +611,6 @@ std::string UCI::move(const Position& pos, Move m) {
         move += pos.piece_to_char()[make_piece(BLACK, m.promotion_type( ))];
         else if (m.type_of() == PIECE_PROMOTION)
             move += '+';
-        else if (is_gating(m))
-        {
-            move += pos.piece_to_char()[make_piece(BLACK, gating_type(m))];
-            if (gating_square(m) != from)
-                move += square(gating_square(m));
-        }
 
 #endif
     return move;

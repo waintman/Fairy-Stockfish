@@ -88,14 +88,6 @@ namespace {
               || value == "whitedrawodds" || value == "blackdrawodds" || value == "none";
     }
 
-    template <> bool set(const std::string& value, CountingRule& target) {
-        target =  value == "makruk"  ? MAKRUK_COUNTING
-                : value == "cambodian" ? CAMBODIAN_COUNTING
-                : value == "asean" ? ASEAN_COUNTING
-                : NO_COUNTING;
-        return value == "makruk" || value == "asean" || value == "none";
-    }
-
     template <> bool set(const std::string& value, EnclosingRule& target) {
         target =  value == "reversi"  ? REVERSI
                 : value == "ataxx" ? ATAXX
@@ -304,30 +296,7 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("pocketSize", v->pocketSize);
     parse_attribute("startFen", v->startFen);
 
-    // promotion limit
-    const auto& it_prom_limit = config.find("promotionLimit");
-    if (it_prom_limit != config.end())
-    {
-        char token;
-        size_t idx = 0;
-        std::stringstream ss(it_prom_limit->second);
-        if (DoCheck && idx == std::string::npos)
-            std::cerr << "promotionLimit - Invalid piece type: " << token << std::endl;
-        else if (DoCheck && !ss.eof())
-            std::cerr << "promotionLimit - Invalid piece count for type: " << v->pieceToChar[idx] << std::endl;
-    }
-    // promoted piece types
-    const auto& it_prom_pt = config.find("promotedPieceType");
-    if (it_prom_pt != config.end())
-    {
-        char token;
-        size_t idx = 0, idx2 = 0;
-        std::stringstream ss(it_prom_pt->second);
-        if (DoCheck && (idx == std::string::npos || idx2 == std::string::npos))
-            std::cerr << "promotedPieceType - Invalid piece type: " << token << std::endl;
-    }
     parse_attribute("mandatoryPawnPromotion", v->mandatoryPawnPromotion);
-    parse_attribute("mutuallyImmuneTypes", v->mutuallyImmuneTypes, v->pieceToChar);
     parse_attribute("petrifyBlastPieces", v->petrifyBlastPieces);
     parse_attribute("enPassantRegion", v->enPassantRegion);
     parse_attribute("enPassantTypes", v->enPassantTypes[WHITE], v->pieceToChar);
@@ -359,7 +328,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
     parse_attribute("dropOppositeColoredBishop", v->dropOppositeColoredBishop);
     parse_attribute("dropNoDoubled", v->dropNoDoubled, v->pieceToChar);
     parse_attribute("dropNoDoubledCount", v->dropNoDoubledCount);
-    parse_attribute("immobilityIllegal", v->immobilityIllegal);
     parse_attribute("wallingRegionWhite", v->wallingRegion[WHITE]);
     parse_attribute("wallingRegionBlack", v->wallingRegion[BLACK]);
     parse_attribute("wallingRegion", v->wallingRegion[WHITE]);
@@ -452,7 +420,7 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         v->conclude(); // In preparation for the consistency checks below
 
         // startFen
-        if (FEN::validate_fen(v->startFen, v, false) != FEN::FEN_OK)
+        if (FEN::validate_fen(v->startFen, v) != FEN::FEN_OK)
             std::cerr << "startFen - Invalid starting position: " << v->startFen << std::endl;
 
         // pieceToCharTable
@@ -481,15 +449,6 @@ Variant* VariantParser<DoCheck>::parse(Variant* v) {
         {
             if (v->flipEnclosedPieces)
                 std::cerr << "Can not use kings with flipEnclosedPieces." << std::endl;
-        }
-        // Options incompatible with royal kings OR pseudo-royal kings. Possible in theory though:
-        // 1. In blast variants, moving a (pseudo-)royal blastImmuneType into another piece is legal.
-        // 2. In blast variants, capturing a piece next to a (pseudo-)royal blastImmuneType is legal.
-        // 3. Moving a (pseudo-)royal mutuallyImmuneType into a square threatened by the same type is legal.
-        if (v->pieceTypes & KING)
-        {
-            if (v->mutuallyImmuneTypes)
-                std::cerr << "Can not use kings or pseudo-royal with mutuallyImmuneTypes." << std::endl;
         }
     }
     return v;

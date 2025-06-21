@@ -130,7 +130,7 @@ extern "C" PyObject* pyffish_getSAN(PyObject* self, PyObject *args) {
         return NULL;
     }
     if (notation == NOTATION_DEFAULT)
-        notation = default_notation(variants.find(std::string(variant))->second);
+        notation = default_notation();
     StateListPtr states(new std::deque<StateInfo>(1));
     buildPosition(pos, states, variant, fen, moveList, chess960);
     std::string moveStr = move;
@@ -151,7 +151,7 @@ extern "C" PyObject* pyffish_getSANmoves(PyObject* self, PyObject *args) {
         return NULL;
     }
     if (notation == NOTATION_DEFAULT)
-        notation = default_notation(variants.find(std::string(variant))->second);
+        notation = default_notation();
     StateListPtr states(new std::deque<StateInfo>(1));
     buildPosition(pos, states, variant, fen, sanMoves, chess960);
 
@@ -327,7 +327,7 @@ extern "C" PyObject* pyffish_isOptionalGameEnd(PyObject* self, PyObject *args) {
 
     StateListPtr states(new std::deque<StateInfo>(1));
     buildPosition(pos, states, variant, fen, moveList, chess960);
-    gameEnd = pos.is_optional_game_end(result, 0, countStarted);
+    gameEnd = pos.is_optional_game_end(result, 0);
     return Py_BuildValue("(Oi)", gameEnd ? Py_True : Py_False, result);
 }
 
@@ -358,7 +358,7 @@ extern "C" PyObject* pyffish_validateFen(PyObject* self, PyObject *args) {
         return NULL;
     }
 
-    return Py_BuildValue("i", FEN::validate_fen(std::string(fen), variants.find(std::string(variant))->second, chess960));
+    return Py_BuildValue("i", FEN::validate_fen(std::string(fen), variants.find(std::string(variant))->second));
 }
 
 // INPUT variant, fen
@@ -428,13 +428,8 @@ PyMODINIT_FUNC PyInit_pyffish() {
     PyModule_AddObject(module, "NOTATION_DEFAULT", PyLong_FromLong(NOTATION_DEFAULT));
     PyModule_AddObject(module, "NOTATION_SAN", PyLong_FromLong(NOTATION_SAN));
     PyModule_AddObject(module, "NOTATION_LAN", PyLong_FromLong(NOTATION_LAN));
-    PyModule_AddObject(module, "NOTATION_SHOGI_HOSKING", PyLong_FromLong(NOTATION_SHOGI_HOSKING));
-    PyModule_AddObject(module, "NOTATION_SHOGI_HODGES", PyLong_FromLong(NOTATION_SHOGI_HODGES));
-    PyModule_AddObject(module, "NOTATION_SHOGI_HODGES_NUMBER", PyLong_FromLong(NOTATION_SHOGI_HODGES_NUMBER));
     PyModule_AddObject(module, "NOTATION_JANGGI", PyLong_FromLong(NOTATION_JANGGI));
     PyModule_AddObject(module, "NOTATION_XIANGQI_WXF", PyLong_FromLong(NOTATION_XIANGQI_WXF));
-    PyModule_AddObject(module, "NOTATION_THAI_SAN", PyLong_FromLong(NOTATION_THAI_SAN));
-    PyModule_AddObject(module, "NOTATION_THAI_LAN", PyLong_FromLong(NOTATION_THAI_LAN));
 
     // validation
     PyModule_AddObject(module, "FEN_OK", PyLong_FromLong(FEN::FEN_OK));

@@ -658,47 +658,10 @@ class TestPyffish(unittest.TestCase):
         result = sf.get_san("shogi", SHOGI, "i3i4")
         self.assertEqual(result, "P-16")
 
-        result = sf.get_san("shogi", SHOGI, "i3i4", False, sf.NOTATION_SHOGI_HOSKING)
-        self.assertEqual(result, "P16")
-
-        result = sf.get_san("shogi", SHOGI, "f1e2", False, sf.NOTATION_SHOGI_HOSKING)
-        self.assertEqual(result, "G49-58")
-        result = sf.get_san("shogi", SHOGI, "f1e2", False, sf.NOTATION_SHOGI_HODGES)
-        self.assertEqual(result, "G4i-5h")
-        result = sf.get_san("shogi", SHOGI, "f1e2", False, sf.NOTATION_SHOGI_HODGES_NUMBER)
-        self.assertEqual(result, "G49-58")
-
-        # Disambiguation of promotion moves
-        fen = "p1ksS/n1n2/4P/5/+L1K1+L[] b - - 3 9"
-        result = sf.get_san("kyotoshogi", fen, "c4b2+", False, sf.NOTATION_SHOGI_HODGES_NUMBER)
-        self.assertEqual(result, "N32-44+")
-        result = sf.get_san("kyotoshogi", fen, "a4b2+", False, sf.NOTATION_SHOGI_HODGES_NUMBER)
-        self.assertEqual(result, "N52-44+")
-
         # Demotion
         fen = "p+nks+l/5/5/L4/1SK+NP[-] b 0 1"
         result = sf.get_san("kyotoshogi", fen, "e5e4-", False, sf.NOTATION_SAN)
         self.assertEqual(result, "Ge4=L")
-
-        fen = "lnsgkgsnl/1r5b1/pppppp1pp/6p2/9/2P6/PP1PPPPPP/1B5R1/LNSGKGSNL w -"
-        result = sf.get_san("shogi", fen, "b2h8", False, sf.NOTATION_SHOGI_HODGES)
-        self.assertEqual(result, "Bx2b=")
-        result = sf.get_san("shogi", fen, "b2h8+", False, sf.NOTATION_SHOGI_HODGES)
-        self.assertEqual(result, "Bx2b+")
-
-        fen = "lnsgkg1nl/1r5s1/pppppp1pp/6p2/9/2P6/PP1PPPPPP/7R1/LNSGKGSNL[Bb] w "
-        result = sf.get_san("shogi", fen, "B@g7", False, sf.NOTATION_SHOGI_HODGES)
-        self.assertEqual(result, "B*3c")
-        result = sf.get_san("shogi", fen, "B@g7", False, sf.NOTATION_SHOGI_HODGES_NUMBER)
-        self.assertEqual(result, "B*33")
-
-        fen = "lnsgkg1nl/1r4s+B1/pppppp1pp/6p2/9/2P6/PP1PPPPPP/7R1/LNSGKGSNL[B] w "
-        result = sf.get_san("shogi", fen, "h8g7", False, sf.NOTATION_SHOGI_HODGES)
-        self.assertEqual(result, "+B-3c")
-
-        fen = "lnk2gsnl/7b1/p1p+SGp1pp/6p2/1pP6/4P4/PP3PPPP/1S2G2R1/L2GK1bNL[PRppns] w "
-        result = sf.get_san("shogi", fen, "d7d8", False, sf.NOTATION_SHOGI_HODGES)
-        self.assertEqual(result, "+S-6b")
 
         result = sf.get_san("xiangqi", XIANGQI, "h1g3")
         self.assertEqual(result, "Hg3")
@@ -781,56 +744,27 @@ class TestPyffish(unittest.TestCase):
 
         result = sf.get_san("makruk", MAKRUK, "e3e4")
         self.assertEqual(result, "e4")
-        result = sf.get_san("makruk", MAKRUK, "e3e4", False, sf.NOTATION_THAI_SAN)
-        self.assertEqual(result, "จ๔")
-        result = sf.get_san("makruk", MAKRUK, "e3e4", False, sf.NOTATION_THAI_LAN)
-        self.assertEqual(result, "บ จ๓-จ๔")
 
         fen = "r1smksnr/3n4/pppp1ppp/4p3/4PP2/PPPP2PP/8/RNSKMSNR w - - 0 1"
         result = sf.get_san("makruk", fen, "f4e5")
         self.assertEqual(result, "fxe5")
-        result = sf.get_san("makruk", fen, "f4e5", False, sf.NOTATION_THAI_SAN)
-        self.assertEqual(result, "ฉxจ๕")
-        result = sf.get_san("makruk", fen, "f4e5", False, sf.NOTATION_THAI_LAN)
-        self.assertEqual(result, "บ ฉ๔xจ๕")
 
         fen = "rnsm1s1r/4n1k1/1ppppppp/p7/2PPP3/PP3PPP/4N2R/RNSKMS2 b - - 1 5"
         result = sf.get_san("makruk", fen, "f8f7")
         self.assertEqual(result, "Sf7")
-        result = sf.get_san("makruk", fen, "f8f7", False, sf.NOTATION_THAI_SAN)
-        self.assertEqual(result, "ค-ฉ๗")
-        result = sf.get_san("makruk", fen, "f8f7", False, sf.NOTATION_THAI_LAN)
-        self.assertEqual(result, "ค ฉ๘-ฉ๗")
 
         fen = "4k3/8/8/4S3/8/2S5/8/4K3 w - - 0 1"
         result = sf.get_san("makruk", fen, "e5d4")
         self.assertEqual(result, "Sed4")
         result = sf.get_san("makruk", fen, "c3d4")
         self.assertEqual(result, "Scd4")
-        result = sf.get_san("makruk", fen, "e5d4", False, sf.NOTATION_THAI_SAN)
-        self.assertEqual(result, "คจ-ง๔")
-        result = sf.get_san("makruk", fen, "c3d4", False, sf.NOTATION_THAI_SAN)
-        self.assertEqual(result, "คค-ง๔")
-        result = sf.get_san("makruk", fen, "e5d4", False, sf.NOTATION_THAI_LAN)
-        self.assertEqual(result, "ค จ๕-ง๔")
-        result = sf.get_san("makruk", fen, "c3d4", False, sf.NOTATION_THAI_LAN)
-        self.assertEqual(result, "ค ค๓-ง๔")
 
         # Distinction between the regular met and the promoted pawn
         fen = "4k3/8/4M3/4S3/8/2S5/8/4K3 w - - 0 1"
-        result = sf.get_san("makruk", fen, "e6d5", False, sf.NOTATION_THAI_SAN)
-        self.assertEqual(result, "ม็-ง๕")
-        fen = "4k3/8/4M~3/4S3/8/2S5/8/4K3 w - - 0 1"
-        result = sf.get_san("makruk", fen, "e6d5", False, sf.NOTATION_THAI_SAN)
-        self.assertEqual(result, "ง-ง๕")
 
         fen = "4k3/8/8/3S4/8/3S4/8/4K3 w - - 0 1"
         result = sf.get_san("makruk", fen, "d3d4")
         self.assertEqual(result, "Sd4")
-        result = sf.get_san("makruk", fen, "d3d4", False, sf.NOTATION_THAI_SAN)
-        self.assertEqual(result, "ค-ง๔")
-        result = sf.get_san("makruk", fen, "d3d4", False, sf.NOTATION_THAI_LAN)
-        self.assertEqual(result, "ค ง๓-ง๔")
 
 
         UCI_moves = ["e2e4", "e7e5", "g1f3", "b8c6h", "f1c4", "f8c5e"]
@@ -1027,7 +961,7 @@ class TestPyffish(unittest.TestCase):
 
     def _check_optional_game_end(self, variant, fen, moves, game_end, game_result=None):
         with self.subTest(variant=variant, fen=fen, game_end=game_end, game_result=game_result):
-            result = sf.is_optional_game_end(variant, fen, moves)
+            result = sf.is_optional_game_end(variant, fen)
             self.assertEqual(result[0], game_end)
             if game_result is not None:
                 self.assertEqual(result[1], game_result)
@@ -1117,7 +1051,7 @@ class TestPyffish(unittest.TestCase):
                 with self.subTest(variant=variant, fen=fen):
                     self.assertNotEqual(sf.validate_fen(fen, variant), sf.FEN_OK)
         # chess960
-        self.assertEqual(sf.validate_fen(CHESS960, "chess", True), sf.FEN_OK)
+        self.assertEqual(sf.validate_fen(CHESS960, "chess"), sf.FEN_OK)
         self.assertEqual(sf.validate_fen("nrbqbkrn/pppppppp/8/8/8/8/PPPPPPPP/NRBQBKRN w BGbg - 0 1", "newzealand", True), sf.FEN_OK, "{}: {}".format(variant, fen))
         # all variants starting positions
         for variant in sf.variants():

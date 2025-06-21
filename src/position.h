@@ -55,7 +55,6 @@ struct StateInfo {
     Square epSquare;
 #ifdef FAIRY_STOCKFISH
     int    countingPly;
-    int    countingLimit;
     CheckCount checksRemaining[COLOR_NB];
     Bitboard epSquares;
     Square castlingKingSquare[COLOR_NB];
@@ -124,10 +123,8 @@ class Position {
     Position& set(const Variant* v, const std::string& fenStr, bool isChess960, StateInfo* si);
 #endif
     Position&   set(const std::string& code, Color c, StateInfo* si);
-#ifndef FAIRY_STOCKFISH
     std::string fen() const;
-#else
-    std::string fen(bool sfen = false, bool showPromoted = false, int countStarted = 0, std::string holdings = "-", Bitboard fogArea = 0) const;
+#ifdef FAIRY_STOCKFISH
 
     // Variant rule properties
     const Variant* variant() const;
@@ -144,7 +141,6 @@ class Position {
     PieceSet promotion_piece_types(Color c) const;
     int promotion_limit(PieceType pt) const;
     bool mandatory_pawn_promotion() const;
-    PieceSet mutually_immune_types() const;
     EndgameEval endgame_eval() const;
     Rank castling_rank(Color c) const;
     PieceType castling_king_piece(Color c) const;
@@ -163,7 +159,6 @@ class Position {
     bool sittuyin_rook_drop() const;
     bool drop_opposite_colored_bishop() const;
     PieceType drop_no_doubled() const;
-    bool immobility_illegal() const;
     bool cambodian_moves() const;
     Bitboard diagonal_lines() const;
     bool pass(Color c) const;
@@ -312,19 +307,14 @@ class Position {
     bool is_immediate_game_end() const;
     bool is_immediate_game_end(Value& result, int ply = 0) const;
     bool is_optional_game_end() const;
-    bool is_optional_game_end(Value& result, int ply = 0, int countStarted = 0) const;
+    bool is_optional_game_end(Value& result, int ply = 0) const;
     bool is_game_end(Value& result, int ply = 0) const;
     Value material_counting_result() const;
 #endif
     bool  is_draw(int ply) const;
     bool  has_game_cycle(int ply) const;
     bool  has_repeated() const;
-#ifdef FAIRY_STOCKFISH
-    int count_limit(Color sideToCount) const;
-    int board_honor_counting_ply(int countStarted) const;
-    int counting_limit(int countStarted) const;
-    int counting_ply(int countStarted) const;
-#endif
+
     int   rule50_count() const;
     Value non_pawn_material(Color c) const;
     Value non_pawn_material() const;
@@ -446,11 +436,6 @@ inline bool Position::mandatory_pawn_promotion() const {
     return var->mandatoryPawnPromotion;
 }
 
-inline PieceSet Position::mutually_immune_types() const {
-    assert(var != nullptr);
-    return var->mutuallyImmuneTypes;
-}
-
 inline EndgameEval Position::endgame_eval() const {
     assert(var != nullptr);
     return !count_in_hand(ALL_PIECES) && (var->endgameEval != EG_EVAL_CHESS || count<KING>() == 2) ? var->endgameEval : NO_EG_EVAL;
@@ -554,11 +539,6 @@ inline bool Position::drop_opposite_colored_bishop() const {
 inline PieceType Position::drop_no_doubled() const {
     assert(var != nullptr);
     return var->dropNoDoubled;
-}
-
-inline bool Position::immobility_illegal() const {
-    assert(var != nullptr);
-    return var->immobilityIllegal;
 }
 
 inline bool Position::cambodian_moves() const {
@@ -1006,22 +986,6 @@ inline Value Position::non_pawn_material() const {
     return non_pawn_material(WHITE) + non_pawn_material(BLACK);
 }
 
-#ifdef FAIRY_STOCKFISH
-
-inline int Position::board_honor_counting_ply(int countStarted) const {
-    return countStarted == 0 ?
-        st->countingPly :
-        countStarted < 0 ? 0 : std::max(1 + gamePly - countStarted, 0);
-}
-
-inline int Position::counting_limit(int countStarted) const {
-    return st->countingLimit;
-}
-
-inline int Position::counting_ply(int countStarted) const {
-    return !count<PAWN>() && (count<ALL_PIECES>(WHITE) <= 1 || count<ALL_PIECES>(BLACK) <= 1) && st->countingPly;
-}
-#endif
 inline int Position::game_ply() const { return gamePly; }
 
 inline int Position::rule50_count() const { return st->rule50; }

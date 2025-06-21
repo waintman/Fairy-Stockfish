@@ -118,7 +118,7 @@ std::ostream& operator<<(std::ostream& os, const Position& pos) {
     for (File f = FILE_A; f <= pos.max_file(); ++f)
         os << "   " << char('a' + f);
     os << "\n";
-    os << "\nFen: " << pos.fen() << "\nSfen: " << pos.fen(true) << "\nKey: " << std::hex << std::uppercase
+    os << "\nFen: " << pos.fen() << "\nKey: " << std::hex << std::uppercase
 #endif
        << std::setfill('0')
        << std::setw(16) << pos.key() << std::setfill(' ') << std::dec << "\nCheckers: ";
@@ -509,13 +509,6 @@ Position& Position::set(const Variant* v, const string& fenStr, bool isChess960,
 #ifdef FAIRY_STOCKFISH
     }
 
-    // counting rules
-    if (st->countingLimit && st->rule50)
-    {
-        st->countingPly = st->rule50;
-        st->rule50 = 0;
-    }
-
     // Lichess-style counter for 3check
     if (check_counting())
     {
@@ -712,11 +705,7 @@ Position& Position::set(const string& code, Color c, StateInfo* si) {
 
 // Returns a FEN representation of the position. In case of
 // Chess960 the Shredder-FEN notation is used. This is mainly a debugging function.
-#ifndef FAIRY_STOCKFISH
 string Position::fen() const {
-#else
-string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string holdings, Bitboard fogArea) const {
-#endif
 
     int                emptyCnt;
     std::ostringstream ss;
@@ -732,7 +721,7 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
     {
         for (File f = FILE_A; f <= max_file(); ++f)
         {
-            for (emptyCnt = 0; f <= max_file() && !(pieces() & make_square(f, r)) && !(fogArea & make_square(f, r)); ++f)
+            for (emptyCnt = 0; f <= max_file() && !(pieces() & make_square(f, r)); ++f)
 #endif
                 ++emptyCnt;
 
@@ -745,7 +734,7 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
 #else
             if (f <= max_file())
             {
-                if (empty(make_square(f, r)) || fogArea & make_square(f, r))
+                if (empty(make_square(f, r)))
                     // Wall square
                     ss << "*";
                 else if (unpromoted_piece_on(make_square(f, r)))
@@ -754,10 +743,6 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
                 else
                 {
                     ss << piece_to_char()[piece_on(make_square(f, r))];
-
-                    // Set promoted pieces
-                    if (showPromoted && is_promoted(make_square(f, r)))
-                        ss << "~";
                 }
             }
 #endif
@@ -806,9 +791,7 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
         ss << '-';
 
     // Counting limit or ep-square
-    if (st->countingLimit)
-        ss << " " << counting_limit(countStarted) << " ";
-    else if (!ep_squares())
+    if (!ep_squares())
         ss << " - ";
     else
     {
@@ -823,10 +806,7 @@ string Position::fen(bool sfen, bool showPromoted, int countStarted, std::string
         ss << st->checksRemaining[WHITE] << "+" << st->checksRemaining[BLACK] << " ";
 
     // Counting ply or 50-move rule counter
-    if (st->countingLimit)
-        ss << counting_ply(countStarted);
-    else
-        ss << st->rule50;
+    ss << st->rule50;
 
     ss << " " << 1 + (gamePly - (sideToMove == BLACK)) / 2;
 #endif
@@ -1043,10 +1023,6 @@ bool Position::legal(Move m) const {
     assert(!count<KING>(us) || piece_on(square<KING>(us)) == make_piece(us, KING));
     assert(board_bb() & to);
 
-    // No legal moves from target square
-    if (immobility_illegal() && (m.type_of() == NORMAL) && !(PseudoMoves[0][us][type_of(moved_piece(m))][to] & board_bb()))
-        return false;
-
     // Illegal king passing move
     if (pass_on_stalemate(us) && is_pass(m) && !checkers())
     {
@@ -1055,13 +1031,6 @@ bool Position::legal(Move m) const {
                 return false;
     }
 
-    // mutuallyImmuneTypes (diplomacy in Atomar)-- In no-check Atomic, kings can be beside each other, but in Atomar, this prevents them from actually taking.
-    // Generalized to allow a custom set of pieces that can't capture a piece of the same type.
-    if (capture(m) &&
-        (mutually_immune_types() & type_of(moved_piece(m))) &&
-        (type_of(moved_piece(m)) == type_of(piece_on(to)))
-    )
-    return false;
 #endif
 
     // En passant captures are a tricky special case. Because they are rather
@@ -1113,11 +1082,6 @@ bool Position::legal(Move m) const {
 #else
         to = make_square(to > from ? FILE_G : FILE_C, castling_rank(us));
         Direction step = to > from ? WEST : EAST;
-
-        // Will the gate be blocked by king or rook?
-        Square rto = to + (m.to_sq() > m.from_sq() ? WEST : EAST);
-        if (is_gating(m) && (gating_square(m) == to || gating_square(m) == rto))
-            return false;
 
         // Non-royal pieces can not be impeded from castling
         if (type_of(piece_on(from)) != KING)
@@ -1201,11 +1165,7 @@ bool Position::pseudo_legal(const Move m) const {
 #endif
     // Use a slower but simpler function for uncommon cases
     // yet we skip the legality check of MoveList<LEGAL>().
-#ifndef FAIRY_STOCKFISH
     if (m.type_of() != NORMAL)
-#else
-    if (m.type_of() != NORMAL || is_gating(m))
-#endif
         return checkers() ? MoveList<EVASIONS>(*this).contains(m)
                           : MoveList<NON_EVASIONS>(*this).contains(m);
 
@@ -1352,10 +1312,6 @@ bool Position::gives_check(Move m) const {
         return !aligned(from, to, square<KING>(~sideToMove)) || m.type_of() == CASTLING;
 
 #ifdef FAIRY_STOCKFISH
-    // Is there a check by gated pieces?
-    if (    is_gating(m)
-        && attacks_bb(sideToMove, gating_type(m), gating_square(m), (pieces() ^ from) | to) & square<KING>(~sideToMove))
-        return true;
 
     // Is there a check by special diagonal moves?
     if (more_than_one(diagonal_lines() & (to | square<KING>(~sideToMove))))
@@ -1464,11 +1420,6 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
     ++gamePly;
     ++st->rule50;
     ++st->pliesFromNull;
-#ifdef FAIRY_STOCKFISH
-    if (st->countingLimit)
-        ++st->countingPly;
-#endif
-
     // Used by NNUE
     st->accumulatorBig.computed[WHITE]     = st->accumulatorBig.computed[BLACK] =
       st->accumulatorSmall.computed[WHITE] = st->accumulatorSmall.computed[BLACK] = false;
@@ -1772,29 +1723,6 @@ void Position::do_move(Move m, StateInfo& newSt, bool givesCheck) {
             k ^= Zobrist::enpassant[file_of(pop_lsb(b))];
     }
 
-    // Add gating piece
-    if (is_gating(m))
-    {
-        Square gate = gating_square(m);
-        Piece gating_piece = make_piece(us, gating_type(m));
-
-        // Add gating piece
-        dp.piece[dp.dirty_num] = gating_piece;
-        dp.handPiece[dp.dirty_num] = gating_piece;
-        dp.handCount[dp.dirty_num] = pieceCountInHand[us][gating_type(m)];
-        dp.from[dp.dirty_num] = SQ_NONE;
-        dp.to[dp.dirty_num] = gate;
-        dp.dirty_num++;
-
-        put_piece(gating_piece, gate);
-        remove_from_hand(gating_piece);
-
-        st->gatesBB[us] ^= gate;
-        k ^= Zobrist::psq[gating_piece][gate];
-        st->materialKey ^= Zobrist::psq[gating_piece][pieceCount[gating_piece]];
-        st->nonPawnMaterial[us] += PieceValue[MG][gating_piece];
-    }
-
     // Remove king leaping right when aimed by a rook
     if (cambodian_moves() && type_of(pc) == ROOK && (square<KING>(them) & gates(them) & attacks_bb<ROOK>(to)))
         st->gatesBB[them] ^= square<KING>(them);
@@ -1858,7 +1786,7 @@ void Position::undo_move(Move m) {
 #ifndef FAIRY_STOCKFISH
     assert(empty(from) || m.type_of() == CASTLING);
 #else
-    assert(empty(from) || m.type_of() == CASTLING || is_gating(m)
+    assert(empty(from) || m.type_of() == CASTLING
             || (is_pass(m) && pass(us)));
 #endif
     assert(type_of(st->capturedPiece) != KING);
@@ -1867,15 +1795,6 @@ void Position::undo_move(Move m) {
     // Reset wall squares
     byTypeBB[ALL_PIECES] ^= st->wallSquares ^ st->previous->wallSquares;
 
-    // Remove gated piece
-    if (is_gating(m))
-    {
-        Piece gating_piece = make_piece(us, gating_type(m));
-        remove_piece(gating_square(m));
-        board[gating_square(m)] = NO_PIECE;
-        add_to_hand(gating_piece);
-        st->gatesBB[us] |= gating_square(m);
-    }
 #endif
     if (m.type_of() == PROMOTION)
     {
@@ -2123,7 +2042,7 @@ bool Position::see_ge(Move m, int threshold) const {
         return true;
 
     // Do not evaluate SEE if value would be unreliable
-    if (is_gating(m) || count<CLOBBER_PIECE>() == count<ALL_PIECES>())
+    if (count<CLOBBER_PIECE>() == count<ALL_PIECES>())
         return VALUE_ZERO >= threshold;
 
 #endif
@@ -2295,7 +2214,7 @@ bool Position::is_draw(int ply) const {
 /// Position::is_optional_game_end() tests whether the position may end the game by
 /// 50-move rule, by repetition, or a variant rule that allows a player to claim a game result.
 
-bool Position::is_optional_game_end(Value& result, int ply, int countStarted) const {
+bool Position::is_optional_game_end(Value& result, int ply) const {
 
   // n-move rule
   if (n_move_rule() && st->rule50 > (2 * n_move_rule() - 1) && (!checkers() || MoveList<LEGAL>(*this).size()))
@@ -2639,16 +2558,6 @@ bool Position::has_game_cycle(int ply) const {
     }
     return false;
 }
-
-#ifdef FAIRY_STOCKFISH
-
-/// Position::count_limit() returns the counting limit in full moves.
-
-int Position::count_limit(Color sideToCount) const {
-      return 0;
-}
-
-#endif
 
 // Flips position with the white and black sides reversed. This
 // is only useful for debugging e.g. for finding evaluation symmetry bugs.

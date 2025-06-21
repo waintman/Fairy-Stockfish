@@ -50,7 +50,6 @@ struct Variant {
   Bitboard mobilityRegion[COLOR_NB][PIECE_TYPE_NB] = {};
   
   bool mandatoryPawnPromotion = true;
-  PieceSet mutuallyImmuneTypes = NO_PIECE_SET;
   bool petrifyBlastPieces = false;
   Bitboard enPassantRegion = AllSquares;
   PieceSet enPassantTypes[COLOR_NB] = {piece_set(PAWN), piece_set(PAWN)};
@@ -75,7 +74,6 @@ struct Variant {
   bool dropOppositeColoredBishop = false;
   PieceType dropNoDoubled = NO_PIECE_TYPE;
   int dropNoDoubledCount = 1;
-  bool immobilityIllegal = false;
   Bitboard wallingRegion[COLOR_NB] = {AllSquares, AllSquares};
   bool cambodianMoves = false;
   Bitboard diagonalLines = 0;
@@ -141,7 +139,7 @@ struct Variant {
   bool shogiStylePromotions = false;
   std::vector<Direction> connect_directions;
   PieceSet connectPieceTypesTrimmed = ~NO_PIECE_SET;
-  void add_piece(PieceType pt, char c, std::string betza = "", char c2 = ' ') {
+  void add_piece(PieceType pt, char c, char c2 = ' ') {
       // Avoid ambiguous definition by removing existing piece with same letter
       size_t idx;
       if ((idx = pieceToChar.find(toupper(c))) != std::string::npos)
@@ -152,10 +150,6 @@ struct Variant {
       pieceToCharSynonyms[make_piece(WHITE, pt)] = toupper(c2);
       pieceToCharSynonyms[make_piece(BLACK, pt)] = tolower(c2);
       pieceTypes |= pt;
-  }
-
-  void add_piece(PieceType pt, char c, char c2) {
-      add_piece(pt, c, "", c2);
   }
 
   void remove_piece(PieceType pt) {

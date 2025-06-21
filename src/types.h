@@ -976,16 +976,8 @@ class Move {
 };
 #ifdef FAIRY_STOCKFISH
 
-inline PieceType gating_type(Move m) {
-  return PieceType((m.raw() >> (2 * SQUARE_BITS + MOVE_TYPE_BITS)) & (PIECE_TYPE_NB - 1));
-}
-
 inline Square gating_square(Move m) {
   return Square((m.raw() >> (2 * SQUARE_BITS + MOVE_TYPE_BITS + PIECE_TYPE_BITS)) & SQUARE_BIT_MASK);
-}
-
-inline bool is_gating(Move m) {
-  return gating_type(m) && (m.type_of() == NORMAL || m.type_of() == CASTLING);
 }
 
 inline bool is_pass(Move m) {
@@ -997,8 +989,8 @@ constexpr Move make_move(Square from, Square to) {
 }
 
 template<MoveType T>
-inline Move make(Square from, Square to, PieceType pt = NO_PIECE_TYPE) {
-  return Move((pt << (2 * SQUARE_BITS + MOVE_TYPE_BITS)) + T + (from << SQUARE_BITS) + to);
+inline Move make(Square from, Square to) {
+  return Move(T + (from << SQUARE_BITS) + to);
 }
 
 constexpr Move reverse_move(Move m) {
