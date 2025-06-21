@@ -28,16 +28,8 @@ namespace Stockfish {
 
 namespace {
 
-#ifdef FAIRY_STOCKFISH
-template<MoveType T>
-ExtMove* make_move_and_gating(ExtMove* moveList, Square from, Square to) {
-    *moveList++ = make<T>(from, to);
-    return moveList;
-}
-#endif
 #ifndef FAIRY_STOCKFISH
 template<GenType Type, Direction D, bool Enemy>
-
 ExtMove* make_promotions(ExtMove* moveList, [[maybe_unused]] Square to) {
 
     constexpr bool all = Type == EVASIONS || Type == NON_EVASIONS;
@@ -54,13 +46,13 @@ ExtMove* make_promotions(ExtMove* moveList, [[maybe_unused]] Square to) {
 
     return moveList;
 }
+
 #endif
 
 template<Color Us, GenType Type>
 ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard target) {
 
 #ifdef FAIRY_STOCKFISH
-
     if (!pos.pieces(Us, PAWN))
         return moveList;
 #endif
@@ -133,27 +125,19 @@ ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard ta
         while (b1)
         {
             Square to   = pop_lsb(b1);
-#ifndef FAIRY_STOCKFISH
             *moveList++ = Move(to - Up, to);
-#else
-            moveList = make_move_and_gating<NORMAL>(moveList, to - Up, to);
-#endif
         }
 
         while (b2)
         {
             Square to   = pop_lsb(b2);
-#ifndef FAIRY_STOCKFISH
             *moveList++ = Move(to - Up - Up, to);
         }
-#else
-            moveList = make_move_and_gating<NORMAL>(moveList, to - Up - Up, to);
-        }
-
+#ifdef FAIRY_STOCKFISH
         while (b3)
         {
             Square to = pop_lsb(b3);
-            moveList = make_move_and_gating<NORMAL>(moveList, to - Up - Up - Up, to);
+            *moveList++ = Move(to - Up - Up - Up, to);
         }
 #endif
     }
@@ -218,13 +202,13 @@ ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard ta
         while (brc)
         {
             Square to = pop_lsb(brc);
-            moveList = make_move_and_gating<NORMAL>(moveList, to - UpRight, to);
+            *moveList++ = Move(to - UpRight, to);
         }
 
         while (blc)
         {
             Square to = pop_lsb(blc);
-            moveList = make_move_and_gating<NORMAL>(moveList, to - UpLeft, to);
+            *moveList = Move(to - UpLeft, to);
         }
 
         for (Bitboard epSquares = pos.ep_squares() & ~pos.pieces(); epSquares; )
@@ -241,7 +225,7 @@ ExtMove* generate_pawn_moves(const Position& pos, ExtMove* moveList, Bitboard ta
             assert(b || !pos.variant()->fastAttacks);
 
             while (b)
-                moveList = make_move_and_gating<EN_PASSANT>(moveList, pop_lsb(b), epSquare);
+                *moveList++ = Move::make<EN_PASSANT>(pop_lsb(b), epSquare);
         }
 #endif
     }
@@ -291,12 +275,12 @@ ExtMove* generate_moves(const Position& pos, ExtMove* moveList, PieceType Pt, Bi
         }
 
         while (b1)
-            moveList = make_move_and_gating<NORMAL>(moveList, from, pop_lsb(b1));
+            *moveList++ = Move(from, pop_lsb(b1));
 
         // En passant captures
         if (Type == CAPTURES || Type == EVASIONS || Type == NON_EVASIONS)
             while (epSquares)
-                moveList = make_move_and_gating<EN_PASSANT>(moveList, from, pop_lsb(epSquares));
+                *moveList++ = Move::make<EN_PASSANT>(from, pop_lsb(epSquares));
 #endif
     }
 
@@ -364,7 +348,7 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
             Square from = pos.castling_king_square(Us);
             for(CastlingRights cr : { Us & KING_SIDE, Us & QUEEN_SIDE } )
                 if (!pos.castling_impeded(cr) && pos.can_castle(cr))
-                    moveList = make_move_and_gating<CASTLING>(moveList, from, pos.castling_rook_square(cr));
+                    *moveList++ = Move::make<CASTLING>(from, pos.castling_rook_square(cr));
         }
 
         // Special moves
@@ -376,7 +360,7 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
                 Bitboard b = PseudoAttacks[WHITE][KNIGHT][from] & rank_bb(rank_of(from + (Us == WHITE ? NORTH : SOUTH)))
                     & target & ~pos.pieces();
                 while (b)
-                    moveList = make_move_and_gating<SPECIAL>(moveList, from, pop_lsb(b));
+                    *moveList++ = Move::make<SPECIAL>(from, pop_lsb(b));
             }
 
             Bitboard b = pos.pieces(Us, FERS) & pos.gates(Us);
@@ -385,13 +369,13 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
                 Square from = pop_lsb(b);
                 Square to = from + 2 * (Us == WHITE ? NORTH : SOUTH);
                 if (is_ok(to) && (target & to & ~pos.pieces()))
-                    moveList = make_move_and_gating<SPECIAL>(moveList, from, to);
+                    *moveList++ = Move::make<SPECIAL>(from, to);
             }
         }
 
         // Workaround for passing: Execute a non-move with any piece
         if (pos.pass(Us) && !pos.count<KING>(Us) && pos.pieces(Us))
-            *moveList++ = make<SPECIAL>(lsb(pos.pieces(Us)), lsb(pos.pieces(Us)));
+            *moveList++ = Move::make<SPECIAL>(lsb(pos.pieces(Us)), lsb(pos.pieces(Us)));
 
     }
 #endif
@@ -411,24 +395,18 @@ ExtMove* generate_all(const Position& pos, ExtMove* moveList) {
                       | (pos.moves_from(Us, KING, ksq) & ~pos.pieces())) & (Type == EVASIONS ? ~pos.pieces(Us) : target);
 #endif
         while (b)
-#ifndef FAIRY_STOCKFISH
             *moveList++ = Move(ksq, pop_lsb(b));
-#else
-            moveList = make_move_and_gating<NORMAL>(moveList, ksq, pop_lsb(b));
 
+#ifdef FAIRY_STOCKFISH
         // Passing move by king
         if (pos.pass(Us))
-            *moveList++ = make<SPECIAL>(ksq, ksq);
+            *moveList++ = Move::make<SPECIAL>(ksq, ksq);
 #endif
 
         if ((Type == QUIETS || Type == NON_EVASIONS) && pos.can_castle(Us & ANY_CASTLING))
             for (CastlingRights cr : {Us & KING_SIDE, Us & QUEEN_SIDE})
                 if (!pos.castling_impeded(cr) && pos.can_castle(cr))
-#ifndef FAIRY_STOCKFISH
                     *moveList++ = Move::make<CASTLING>(ksq, pos.castling_rook_square(cr));
-#else
-                    moveList = make_move_and_gating<CASTLING>(moveList, ksq, pos.castling_rook_square(cr));
-#endif
     }
 
     return moveList;

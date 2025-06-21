@@ -90,6 +90,7 @@
     #else
         #define pext(b, m) 0
     #endif
+
 namespace Stockfish {
 
     #ifdef USE_POPCNT
@@ -454,7 +455,7 @@ constexpr Value PieceValue[PHASE_NB][PIECE_NB] = {
   JanggiElephantValueMg, BannerValueMg, WazirValueMg, CommonerValueMg, CentaurValueMg, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
   VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
   VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
-  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,  
+  VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO, VALUE_ZERO,
   VALUE_ZERO, PawnValueMg, KnightValueMg, BishopValueMg, RookValueMg, QueenValueMg, FersValueMg, AlfilValueMg,
   FersAlfilValueMg, SilverValueMg, AiwokValueMg, BersValueMg, ArchbishopValueMg, ChancellorValueMg, AmazonValueMg, KnibisValueMg,
   BiskniValueMg, KnirooValueMg, RookniValueMg, ShogiPawnValueMg, LanceValueMg, ShogiKnightValueMg, GoldValueMg, DragonHorseValueMg,
@@ -880,17 +881,26 @@ class Move {
 #ifndef FAIRY_STOCKFISH
     constexpr explicit Move(std::uint16_t d) :
         data(d) {}
+
 #else
     constexpr explicit Move(std::uint32_t d) :
         data(d) {}
 #endif
-
+#ifndef FAIRY_STOCKFISH
     constexpr Move(Square from, Square to) :
         data((from << 6) + to) {}
 
+#else
+    constexpr Move(Square from, Square to) :
+        data((from << SQUARE_BITS) + to) {}
+#endif
     template<MoveType T>
-    static constexpr Move make(Square from, Square to, PieceType pt = KNIGHT) {
+    static constexpr Move make(Square from, Square to, [[maybe_unused]] PieceType pt = KNIGHT) {
+#ifndef FAIRY_STOCKFISH
         return Move(T + ((pt - KNIGHT) << 12) + (from << 6) + to);
+#else
+        return Move(T + (from << SQUARE_BITS) + to);
+#endif
     }
 
     constexpr Square from_sq() const {
@@ -986,11 +996,6 @@ inline bool is_pass(Move m) {
 
 constexpr Move make_move(Square from, Square to) {
   return Move((from << SQUARE_BITS) + to);
-}
-
-template<MoveType T>
-inline Move make(Square from, Square to) {
-  return Move(T + (from << SQUARE_BITS) + to);
 }
 
 constexpr Move reverse_move(Move m) {
